@@ -3,7 +3,6 @@ Lucas koh
 */
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
-#include <stdlib.h>
 #include <stdio.h>
 
 #define SWCLK_PIN 2  // GPIO pin for SWCLK
