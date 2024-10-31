@@ -8,12 +8,6 @@ Lucas koh
 
 #define SWCLK_PIN 2  // GPIO pin for SWCLK
 #define SWDIO_PIN 3  // GPIO pin for SWDIO
-
-#define DHCSR 0xE000EDF0   // Debug Halting Control and Status Register (DHCSR) address
-#define CTRL_STAT 0x4      // CTRL/STAT register in DP
-#define ABORT 0x0          // ABORT register in DP
-#define DBGKEY 0xA05F0000  // Debug key required for writing to DHCSR
-#define HALT_CMD (DBGKEY | 0x03)  // Command to halt CPU
 #define PWR_DBG 0x50000000  // Command to enable debug power
 
 void pulse_swclk(int cycles) {
