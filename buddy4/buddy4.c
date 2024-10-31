@@ -1,3 +1,6 @@
+/*
+Lucas koh
+*/
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 #include <stdlib.h>
@@ -137,7 +140,7 @@ void swd_send_wakeup_sequence() {
 
 void powerDebug(){
     swdSetWriteMode();
-    swdWriteBits(0x50000000, 32);
+    swdWriteBits(PWR_DBG, 32);
     swdWriteBits(0x0, 1);
     swdWriteBits(0x00, 4);
 }
@@ -175,18 +178,18 @@ void initialise_debugger(){
     turnaround();
 
     // Read ACK
-    swd_read_ack();
+    // swd_read_ack();
 
     // Read the IDCODE register to confirm proper alignment
     id_code = swd_read_idcode();
     
     printf("\t[*] IDCODE of the target is: 0x%08X\n", id_code);
 
-
-    // READ ME: FOR THE SAKE OF WEEK 10 DELIVERABLES JUST COMMENT OUT EVERYTHING BELOW HERE!!!!!
-    // READ ME: FOR THE SAKE OF WEEK 10 DELIVERABLES JUST COMMENT OUT EVERYTHING BELOW HERE!!!!!
-    // READ ME: FOR THE SAKE OF WEEK 10 DELIVERABLES JUST COMMENT OUT EVERYTHING BELOW HERE!!!!!
-
+    /*
+    READ ME: FOR THE SAKE OF WEEK 10 DELIVERABLES JUST COMMENT OUT EVERYTHING BELOW HERE!!!!!
+    READ ME: FOR THE SAKE OF WEEK 10 DELIVERABLES JUST COMMENT OUT EVERYTHING BELOW HERE!!!!!
+    READ ME: FOR THE SAKE OF WEEK 10 DELIVERABLES JUST COMMENT OUT EVERYTHING BELOW HERE!!!!!
+    */
 
     // Send request to clear Error flags (8-3 Handshake)
     
