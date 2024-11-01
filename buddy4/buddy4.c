@@ -1,6 +1,3 @@
-/*
-Buddy 4
-*/
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 #include <stdio.h>
@@ -8,6 +5,8 @@ Buddy 4
 #define SWCLK_PIN 2  // GPIO pin for SWCLK
 #define SWDIO_PIN 3  // GPIO pin for SWDIO
 #define PWR_DBG 0x50000000  // Command to enable debug power
+#define DHCSR 0xE000EDF0  // DHCSR address
+#define DBGKEY 0xA05F0000 // Debug key
 
 void pulse_swclk(int cycles) {
     for (int i = 0; i < cycles; i++) {
@@ -145,6 +144,60 @@ void checkClear(){
     swdWriteBits(0x00, 4);
 }
 
+void resumeCpu(){
+    /*
+    APSEL
+    */
+    printf("\t[*] Plugging into MEM-AP\n");
+    // 8-3 Handshake [Write APSEL]
+    swdSetWriteMode();
+    swdWriteBits(0x00,4);
+
+    swd_send_request(0b10001101);
+    turnaround();
+    swd_read_ack();
+
+    // Suggest to traverse into MEM-AP at AP0 (0x0)
+    swdWriteBits(0x0,32);
+    swdWriteBits(0x0,1);
+    swdWriteBits(0x00, 4);
+
+    /*
+    TAR
+    */
+    printf("\t[*] Writing DHCSR to TAR\n");
+    // 8 -3 Handshake [Write TAR]
+    swdSetWriteMode();
+    swdWriteBits(0x00,4);
+
+    swd_send_request(0b11010001);
+    turnaround();
+    swd_read_ack();
+
+    // Whack the address inside TAR
+    swdSetWriteMode();
+    swdWriteBits(DHCSR, 32);
+    swdWriteBits(0x0,1);
+    swdWriteBits(0x00, 4);
+
+    /*
+    DWR
+    */
+    printf("\t[*] Sending resume command to DWR\n");
+    // 8-3 Handshake [Write DWR]
+    swdSetWriteMode();
+    swdWriteBits(0x00,4);
+    swd_send_request(0b11011101);
+    turnaround();
+    swd_read_ack();
+
+    // Send Resume command
+    swdSetWriteMode();
+    swdWriteBits(0x01040001, 32);
+    swdWriteBits(0x0,1);
+    swdWriteBits(0x00, 4);
+}
+
 void initialise_debugger(){
     // Declare variables
     uint32_t id_code;
@@ -163,17 +216,17 @@ void initialise_debugger(){
 
     // Reset
     swd_line_reset();
+    /*
+    Read IDCODE
+    */
+
 
     // Send request to read register 0x00 [IDCODE] (8-3 Handshake)
     swd_send_request(0b10100101);
- 
-    // Set this fucker to read
     turnaround();
+    swd_read_ack();
 
-    // Read ACK
-    // swd_read_ack();
-
-    // Read the IDCODE register to confirm proper alignment
+    // Read the IDCODE register
     id_code = swd_read_idcode();
     
     printf("\t[*] IDCODE of the target is: 0x%08X\n", id_code);
@@ -184,78 +237,85 @@ void initialise_debugger(){
     READ ME: FOR THE SAKE OF WEEK 10 DELIVERABLES JUST COMMENT OUT EVERYTHING BELOW HERE!!!!!
     */
 
-    // Send request to clear Error flags (8-3 Handshake)
-    
-     // Set the motherfucker to write 
+    /*
+    Clear Errors
+    */
+   
+    // Send request to WRITE to register 0x00 [ABORT] (8-3 Handshake)
     swdSetWriteMode();
-
-    // Write 4 idle bits. idk why the fuck we need but without this it wont work
     swdWriteBits(0x00,4);
-
-    // Send request to WRITE to register 0x00 [ABORT]
     swd_send_request(0b10000001);
-
-    // Once again set this fucker to read
     turnaround();
-
     swd_read_ack();
 
+    // Clear Errors
     printf("\t[-] Clearing error flags...\n");  
     checkClear();
 
-    // Set this fucker to write
-    swdSetWriteMode();    
-    
-    // Write 4 idle bits. idk why the fuck we need but without this it wont work
+    /*
+    READ CTRL/STAT (Before Power Debug)
+    */
+
+    // Send request to READ to register 0x04 [CTRL/STAT] (8-3 Handshake)
+    swdSetWriteMode();
     swdWriteBits(0x00,4);
     swd_send_request(0b10110001);
-
-    // Yea man read time again!
     turnaround();
     swd_read_ack();
 
-    ctrl_stat_before = swd_read_idcode();  // Replace with actual read function
+    // Read CTRL/STAT
+    ctrl_stat_before = swd_read_idcode();
     printf("\t[*] CTRL/STAT register value before power debug: 0x%08X\n", ctrl_stat_before);
 
-    // Set this fucker to write 
-    swdSetWriteMode();  
+    /*
+    Power Debug
+    */
 
-    // Write 4 idle bits. idk why the fuck we need but without this it wont work
+    // Send request to WRITE to register 0x04 [CTRL/STAT] (8-3 Handshake)
+    swdSetWriteMode();
     swdWriteBits(0x00,4);
-
-    // Send request to WRITE to register 0x04 [CTRL/STAT] [Pwr_dbg]
     swd_send_request(0b10010101);
-
-    // Set the SWDIO to read
     turnaround();
     swd_read_ack();
 
+    // Send Power Debug command
     printf("\t[+] Enabling power debug\n");
     powerDebug();
 
-    swdSetWriteMode();    
-    // Write 4 idle bits. idk why the fuck we need but without this it wont work
+
+    /*
+    READ CTRL/STAT (After Power Debug)
+    */
+
+    // Send request to READ to register 0x04 [CTRL/STAT] (8-3 Handshake)
+    swdSetWriteMode();
     swdWriteBits(0x00,4);
     swd_send_request(0b10110001);
-
-    // Yea man read time again!
     turnaround();
     swd_read_ack();
 
     ctrl_stat_after = swd_read_idcode();  // Replace with actual read function
-    printf("\t[*] CTRL/STAT register value after power debug: 0x%08X\n", ctrl_stat_after);    
+    printf("\t[*] CTRL/STAT register value after power debug: 0x%08X\n", ctrl_stat_after);
 }
 
 int main() {
     stdio_init_all();
-    sleep_ms(7500); // Gotta chill lmao i ain't the flash
-    printf("[*] Sitizen debugger\n");
+    sleep_ms(6500); // Gotta chill lmao i ain't the flash
+    printf("[*] Debugger pre-alpha v.1\n");
 
     // Initialize the debugger
     sleep_ms(800);  // Sleep for dramatic effect
     printf("\n[*] Initializing debugger right now bro\n");
 
     initialise_debugger();
+
+    // At this stage the CPU should be auto-halted
+    printf("\n[*] Debugger is ready! (i think)\n");
+
+    sleep_ms(2000); //Simulate the fact that someone is sending the command
+
+    // Command 1: Resume
+    resumeCpu();
 
     return 0;
 }
