@@ -11,6 +11,8 @@
 #include "hardware/gpio.h"
 #include "hardware/timer.h"
 
+// #include "kiss_fftr.h"
+
 // Declare Constants:
 // Used for pulse measurement
 #define PULSE_PIN 2
@@ -21,6 +23,7 @@
 #define ADC_PIN 26
 #define ADC_MAX 4095.0f
 #define REF_VOLTAGE 3.3f
+#define ADC_SAMPLE_RATE 300.0f
 
 // Used for digital signal measurement
 #define DIGI_PIN 7
@@ -37,10 +40,11 @@ volatile uint32_t pulse_count = 0;
 
 // Used for analog signal measurement
 volatile bool adc_timer = false;
-volatile float ad_signal[SAMPLE_SIZE];
-volatile int sample_index = 0;
+volatile uint32_t buffer_index = 0;
+volatile uint32_t sample_index = 0;
+volatile uint32_t cycles_counted = 0;
+volatile float adc_signal[SAMPLE_SIZE];
 char adc_scan_buffer[BUFFER_SIZE];
-size_t buffer_index = 0;
 
 // Used for digital signal measurement
 volatile uint32_t last_rise_time = 0;
@@ -48,9 +52,9 @@ volatile uint32_t last_fall_time = 0;
 volatile uint32_t high_time = 0;
 volatile uint32_t low_time = 0;
 volatile uint32_t period = 0;
-volatile bool new_cycle_complete = false;
 volatile uint32_t total_width = 0;
 volatile uint32_t measurement_count = 0;
+volatile bool new_cycle_complete = false;
 
 // Declare Prototype Functions:
 // Pulse measurement functions
@@ -61,11 +65,12 @@ bool read_adc(struct repeating_timer *t);
 float calculate_rms();
 float calculate_peak_to_peak();
 float calculate_snr();
+float adc_calculate_frequency();
 
 // Digital signal measurement functions
 void read_digi(uint gpio, uint32_t events);
 bool measure_digi(struct repeating_timer *t);
-float calculate_frequency();
+float digi_calculate_frequency();
 float calculate_duty_cycle();
 
 // General setup functions
@@ -106,13 +111,11 @@ int main()
 
     // Initialize timers
     struct repeating_timer timer1, timer2;
-    add_repeating_timer_ms(300, read_adc, NULL, &timer1);      // Timer for reading ADC, 3s interval
-    add_repeating_timer_ms(1000, measure_digi, NULL, &timer2); // Timer for reading digital signal, 1s interval
+    add_repeating_timer_ms(ADC_SAMPLE_RATE, read_adc, NULL, &timer1); // Timer for reading ADC, 3s interval
+    add_repeating_timer_ms(1000, measure_digi, NULL, &timer2);        // Timer for reading digital signal, 1s interval
 
     while (1)
-    {
         tight_loop_contents(); // Loop forever
-    }
     return 0;
 }
 
@@ -120,9 +123,7 @@ int main()
 void gpio_callback(uint gpio, uint32_t events)
 {
     if (gpio == PULSE_PIN)
-    {
         read_pulse(gpio, events);
-    }
     else if (gpio == ADC_BTN_PIN)
     {
         if (events & GPIO_IRQ_EDGE_FALL)
@@ -137,9 +138,7 @@ void gpio_callback(uint gpio, uint32_t events)
         }
     }
     else if (gpio == DIGI_PIN)
-    {
         read_digi(gpio, events);
-    }
     else
         printf("Invalid Input!!!\n");
 }
@@ -153,8 +152,8 @@ void read_pulse(uint gpio, uint32_t events)
     {
         if (prev_fall_time != 0)
         {
-            uint32_t pulse_width = current_time - prev_fall_time; // Calculate pulse width
-            printf("Pulse %d: Time: %u us, Width: %u us\n", pulse_count + 1, current_time, pulse_width);
+            uint32_t pulse_width = current_time - prev_rise_time; // Calculate pulse width
+            printf("Pulse %d: Time - %u us, Width: %u us\n", pulse_count + 1, current_time, pulse_width);
             pulse_count++;
         }
         prev_rise_time = current_time; // Update previous rising edge time
@@ -175,26 +174,28 @@ bool read_adc(struct repeating_timer *t)
         uint16_t adc_value = adc_read();
         float voltage = (adc_value / ADC_MAX) * REF_VOLTAGE;
 
-        ad_signal[sample_index++] = voltage;
+        adc_signal[sample_index++] = voltage;
         buffer_index += snprintf(adc_scan_buffer + buffer_index, BUFFER_SIZE - buffer_index,
                                  "- %d ", adc_value);
 
         if (sample_index >= SAMPLE_SIZE)
         {
-
             float rms_value = calculate_rms();
             float peak_to_peak_value = calculate_peak_to_peak();
             float snr_value = calculate_snr();
+            float frequency = adc_calculate_frequency();
 
             printf("--- Analog Signal Analysis ---\nADC values captured: %s\n", adc_scan_buffer);
             printf("RMS Voltage: %.3fV\tPeak-to-Peak Voltage: %.3fV\tSignal-to-Noise Ratio (SNR): %.2fdB\n",
                    rms_value, peak_to_peak_value, snr_value);
+            printf("Frequency: %.2f Hz\n", frequency);
 
             sample_index = 0;
             buffer_index = 0;
             memset(adc_scan_buffer, 0, BUFFER_SIZE);
         }
     }
+    
     return true;
 }
 
@@ -204,23 +205,25 @@ float calculate_rms()
     float sum_squares = 0.0f;
     for (int i = 0; i < SAMPLE_SIZE; i++)
     {
-        sum_squares += ad_signal[i] * ad_signal[i];
+        sum_squares += adc_signal[i] * adc_signal[i];
     }
+    
     return sqrt(sum_squares / SAMPLE_SIZE);
 }
 
 // Calculates the peak-to-peak value of the analog signal
 float calculate_peak_to_peak()
 {
-    float min_value = ad_signal[0];
-    float max_value = ad_signal[0];
+    float min_value = adc_signal[0];
+    float max_value = adc_signal[0];
     for (int i = 1; i < SAMPLE_SIZE; i++)
     {
-        if (ad_signal[i] < min_value)
-            min_value = ad_signal[i];
-        if (ad_signal[i] > max_value)
-            max_value = ad_signal[i];
+        if (adc_signal[i] < min_value)
+            min_value = adc_signal[i];
+        if (adc_signal[i] > max_value)
+            max_value = adc_signal[i];
     }
+    
     return max_value - min_value;
 }
 
@@ -232,15 +235,14 @@ float calculate_snr()
     float mean_signal = 0.0f;
 
     for (int i = 0; i < SAMPLE_SIZE; i++)
-    {
-        mean_signal += ad_signal[i];
-    }
+        mean_signal += adc_signal[i];
+    
     mean_signal /= SAMPLE_SIZE;
 
     for (int i = 0; i < SAMPLE_SIZE; i++)
     {
-        float deviation = ad_signal[i] - mean_signal;
-        signal_power += ad_signal[i] * ad_signal[i];
+        float deviation = adc_signal[i] - mean_signal;
+        signal_power += adc_signal[i] * adc_signal[i];
         noise_power += deviation * deviation;
     }
 
@@ -253,6 +255,44 @@ float calculate_snr()
     return (float)10 * log10(signal_power / noise_power);
 }
 
+// Function to calculate frequency based on zero crossings or peaks
+float adc_calculate_frequency()
+{
+    // Ensure we have enough samples to work with
+    if (sample_index < 2)
+        return 0; // Not enough samples for frequency calculation
+
+    // Track time intervals for rising and falling edges
+    uint32_t last_time = 0;
+    uint32_t current_time = 0;
+    uint32_t pulse_count = 0;
+
+    // Iterate through samples to find pulse edges
+    for (int i = 1; i < sample_index; i++)
+    {
+        current_time = i * (1000000 / ADC_SAMPLE_RATE); // Convert index to time in microseconds
+
+        // Check if we've detected a rising edge
+        if (adc_signal[i - 1] < (REF_VOLTAGE / 2) && adc_signal[i] >= (REF_VOLTAGE / 2))
+        {
+            // Count a pulse
+            pulse_count++;
+            last_time = current_time; // Update last time on rising edge
+        }
+    }
+
+    // Calculate the frequency
+    if (pulse_count > 0)
+    {
+        float period = (last_time / pulse_count); // Average period in microseconds
+
+        if (period > 0)
+            return 1000000.0f / period; // Return frequency in Hz
+    }
+
+    return 0; // No pulses detected
+}
+
 // Reads the digital signal, calculates frequency, duty cycle, and pulse width, and prints the results
 void read_digi(uint gpio, uint32_t events)
 {
@@ -261,10 +301,8 @@ void read_digi(uint gpio, uint32_t events)
     if (events & GPIO_IRQ_EDGE_RISE)
     {
         if (last_fall_time != 0)
-        {
             low_time = current_time - last_fall_time;
-        }
-
+        
         if (last_rise_time != 0)
         {
             period = current_time - last_rise_time;
@@ -279,9 +317,8 @@ void read_digi(uint gpio, uint32_t events)
     else if (events & GPIO_IRQ_EDGE_FALL)
     {
         if (last_rise_time != 0)
-        {
             high_time = current_time - last_rise_time;
-        }
+        
         last_fall_time = current_time;
     }
 }
@@ -291,8 +328,8 @@ bool measure_digi(struct repeating_timer *t)
 {
     if (new_cycle_complete)
     {
-        float frequency = calculate_frequency();   // Calculate frequency
-        float duty_cycle = calculate_duty_cycle(); // Calculate duty cycle
+        float frequency = digi_calculate_frequency(); // Calculate frequency
+        float duty_cycle = calculate_duty_cycle();    // Calculate duty cycle
 
         // Print results
         printf("\n--- Digital Signal Analyzer ---\n");
@@ -309,15 +346,14 @@ bool measure_digi(struct repeating_timer *t)
 }
 
 // Calculate frequency using averaged pulse width
-float calculate_frequency()
+float digi_calculate_frequency()
 {
     uint32_t average_period = 0;
     average_period = total_width / measurement_count;
 
     if (average_period > 0)
-    {
         return 1000000.0f / average_period; // Calculate frequency in Hz
-    }
+    
     return 0; // Avoid division by zero
 }
 
