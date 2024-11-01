@@ -49,11 +49,8 @@ volatile uint32_t high_time = 0;
 volatile uint32_t low_time = 0;
 volatile uint32_t period = 0;
 volatile bool new_cycle_complete = false;
-
-#define MAX_MEASUREMENTS 10
-// Circular buffer to store pulse widths
-static uint32_t pulse_widths[MAX_MEASUREMENTS];
-static uint32_t pulse_index = 0;
+volatile uint32_t total_width = 0;
+volatile uint32_t measurement_count = 0;
 
 // Declare Prototype Functions:
 // Pulse measurement functions
@@ -100,7 +97,7 @@ int main()
     setup_adc();
 
     // Used for testing, not needed in final version
-    setup_pwm(0, 100.0f, 0.4f);
+    setup_pwm(0, 500.0f, 0.5f);
 
     // Initialize GPIO interrupts
     gpio_set_irq_enabled_with_callback(PULSE_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
@@ -109,7 +106,7 @@ int main()
 
     // Initialize timers
     struct repeating_timer timer1, timer2;
-    add_repeating_timer_ms(500, read_adc, NULL, &timer1);      // Timer for reading ADC, 5s interval
+    add_repeating_timer_ms(300, read_adc, NULL, &timer1);      // Timer for reading ADC, 3s interval
     add_repeating_timer_ms(1000, measure_digi, NULL, &timer2); // Timer for reading digital signal, 1s interval
 
     while (1)
@@ -123,7 +120,9 @@ int main()
 void gpio_callback(uint gpio, uint32_t events)
 {
     if (gpio == PULSE_PIN)
+    {
         read_pulse(gpio, events);
+    }
     else if (gpio == ADC_BTN_PIN)
     {
         if (events & GPIO_IRQ_EDGE_FALL)
@@ -138,7 +137,9 @@ void gpio_callback(uint gpio, uint32_t events)
         }
     }
     else if (gpio == DIGI_PIN)
+    {
         read_digi(gpio, events);
+    }
     else
         printf("Invalid Input!!!\n");
 }
@@ -154,9 +155,9 @@ void read_pulse(uint gpio, uint32_t events)
         {
             uint32_t pulse_width = current_time - prev_fall_time; // Calculate pulse width
             printf("Pulse %d: Time: %u us, Width: %u us\n", pulse_count + 1, current_time, pulse_width);
+            pulse_count++;
         }
         prev_rise_time = current_time; // Update previous rising edge time
-        pulse_count++;
     }
     else if (events & GPIO_IRQ_EDGE_FALL)
         prev_fall_time = current_time;
@@ -267,11 +268,10 @@ void read_digi(uint gpio, uint32_t events)
         if (last_rise_time != 0)
         {
             period = current_time - last_rise_time;
-            new_cycle_complete = true;
+            total_width += period;
+            measurement_count++;
 
-            // Store pulse width for averaging
-            pulse_widths[pulse_index] = period;
-            pulse_index = (pulse_index + 1) % MAX_MEASUREMENTS; // Circular buffer index
+            new_cycle_complete = true;
         }
 
         last_rise_time = current_time;
@@ -302,6 +302,8 @@ bool measure_digi(struct repeating_timer *t)
 
         // Reset for the next cycle
         new_cycle_complete = false;
+        total_width = 0;
+        measurement_count = 0;
     }
     return true; // Keep the timer running
 }
@@ -310,11 +312,7 @@ bool measure_digi(struct repeating_timer *t)
 float calculate_frequency()
 {
     uint32_t average_period = 0;
-    for (uint32_t i = 0; i < MAX_MEASUREMENTS; i++)
-    {
-        average_period += pulse_widths[i];
-    }
-    average_period /= MAX_MEASUREMENTS; // Average period
+    average_period = total_width / measurement_count;
 
     if (average_period > 0)
     {
