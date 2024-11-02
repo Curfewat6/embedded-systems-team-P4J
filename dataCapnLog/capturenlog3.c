@@ -348,40 +348,6 @@ void init_system_with_filesystem()
     printf("Press GP20 to write a file, GP21 to read files\n");
 }
 
-// Only measures up to 10 pulses, then disables the interrupt. Prints pulse width of each pulse
-// void read_pulse(uint gpio, uint32_t events) {
-//     // Enter the mutex to protect shared resources
-//     // mutex_enter_blocking(&pulse_data_mutex);
-
-//     uint32_t current_time = time_us_32();
-
-//     if (events & GPIO_IRQ_EDGE_RISE) {
-//         if (prev_fall_time != 0) {
-//             uint32_t pulse_width = current_time - prev_rise_time; // Calculate pulse width
-//             low_time = current_time - last_fall_time;
-//             printf("Pulse %d: Time - %u us, Width: %u us, High time: %u us, Low time: %u us\n", pulse_count + 1, current_time, pulse_width, high_time, low_time);
-//             pulse_count++;
-
-//             // low_time = current_time - prev_fall_time;
-//             printf("Debug: Calculated Low Time = %u us\n", low_time);
-//             // pulse_count++;
-//         }
-//         prev_rise_time = current_time;
-//     } else if (events & GPIO_IRQ_EDGE_FALL) {
-//         high_time = current_time - prev_rise_time;
-//         printf("Debug: Calculated High Time = %u us\n", high_time);
-//         prev_fall_time = current_time;
-//     }
-
-//     if (pulse_count >= PULSE_NUM) {
-//         gpio_set_irq_enabled_with_callback(PULSE_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false, &button_callback);
-//     }
-
-//     // Update pulsedata_array
-//     // Exit the mutex once done
-//     // mutex_exit(&pulse_data_mutex);
-// }
-
 // void read_pulse(uint gpio, uint32_t events) {
 //     uint32_t current_time = time_us_32();
 
@@ -417,95 +383,102 @@ void init_system_with_filesystem()
 //     }
 // }
 
+
+// this version of read_pulse can read high time to txt file but low time to txt is not working
+// void read_pulse(uint gpio, uint32_t events) {
+//     uint32_t current_time = time_us_32();
+
+//     if (events & GPIO_IRQ_EDGE_RISE) {
+//         if (prev_fall_time != 0) {
+//             uint32_t pulse_width = current_time - prev_rise_time; // Calculate pulse width
+//             low_time = current_time - prev_fall_time; // Calculate low time
+//             printf("Pulse %d: Time - %u us, Width: %u us, High time: %u us, Low time: %u us\n", pulse_count + 1, current_time, pulse_width, high_time, low_time);
+//             pulse_count++;
+//         }
+//         prev_rise_time = current_time;
+//     } else if (events & GPIO_IRQ_EDGE_FALL) {
+//         high_time = current_time - prev_rise_time; // Calculate high time
+//         printf("Debug: Pulse %d: Calculated High Time = %u us\n", pulse_count + 1, high_time);
+//         prev_fall_time = current_time;
+//     }
+
+//     if (pulse_count >= PULSE_NUM) {
+//         gpio_set_irq_enabled_with_callback(PULSE_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false, &button_callback);
+//     }
+
+//     // Update pulsedata_array
+//     if (pulse_count < pulsedata_array_size) {
+//         pulsedata_array[pulse_count].pulse_width_high_time = high_time;
+//         pulsedata_array[pulse_count].pulse_width_low_time = low_time;
+//     } else {
+//         printf("Error: Pulse count exceeds array size.\n");
+//     }
+// }
+
+// this version of read_pulse can read high time to txt file but low time to txt is not working
+// void read_pulse(uint gpio, uint32_t events) {
+//     uint32_t current_time = time_us_32();
+
+//     if (events & GPIO_IRQ_EDGE_RISE) {
+//         if (prev_fall_time != 0) {
+//             uint32_t pulse_width = current_time - prev_rise_time; // Calculate pulse width
+//             low_time = current_time - prev_fall_time; // Calculate low time
+//             printf("Pulse %d: Time - %u us, Width: %u us, High time: %u us, Low time: %u us\n", pulse_count + 1, current_time, pulse_width, high_time, low_time);
+//             pulse_count++;
+//         }
+//         prev_rise_time = current_time;
+//     } else if (events & GPIO_IRQ_EDGE_FALL) {
+//         high_time = current_time - prev_rise_time; // Calculate high time
+//         printf("Debug: Pulse %d: Calculated High Time = %u us\n", pulse_count + 1, high_time);
+//         prev_fall_time = current_time;
+//     }
+
+//     if (pulse_count >= PULSE_NUM) {
+//         gpio_set_irq_enabled_with_callback(PULSE_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false, &button_callback);
+//     }
+
+//     // Update pulsedata_array
+//     if (pulse_count < pulsedata_array_size) {
+//         pulsedata_array[pulse_count].pulse_width_high_time = high_time;
+//         pulsedata_array[pulse_count].pulse_width_low_time = low_time;
+//     } else {
+//         printf("Error: Pulse count exceeds array size.\n");
+//     }
+// }
+
+
+// seems to work fine writing high time and low time to txt correctly based on output.
 void read_pulse(uint gpio, uint32_t events) {
     uint32_t current_time = time_us_32();
 
     if (events & GPIO_IRQ_EDGE_RISE) {
         if (prev_fall_time != 0) {
-            uint32_t pulse_width = current_time - prev_rise_time; // Calculate pulse width
             low_time = current_time - prev_fall_time; // Calculate low time
-            printf("Pulse %d: Time - %u us, Width: %u us, High time: %u us, Low time: %u us\n", pulse_count + 1, current_time, pulse_width, high_time, low_time);
-            pulse_count++;
         }
         prev_rise_time = current_time;
     } else if (events & GPIO_IRQ_EDGE_FALL) {
         high_time = current_time - prev_rise_time; // Calculate high time
-        printf("Debug: Pulse %d: Calculated High Time = %u us\n", pulse_count + 1, high_time);
+
+        if (prev_fall_time != 0) {
+            printf("Pulse %d: Time - %u us, High time: %u us, Low time: %u us\n", 
+                   pulse_count + 1, current_time, high_time, low_time);
+
+            if (pulse_count < pulsedata_array_size) {
+                pulsedata_array[pulse_count].pulse_width_high_time = high_time;
+                pulsedata_array[pulse_count].pulse_width_low_time = low_time;
+                pulse_count++;
+            } else {
+                printf("Error: Pulse count exceeds array size.\n");
+            }
+        }
+
         prev_fall_time = current_time;
     }
 
     if (pulse_count >= PULSE_NUM) {
         gpio_set_irq_enabled_with_callback(PULSE_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false, &button_callback);
     }
-
-    // Update pulsedata_array
-    if (pulse_count < pulsedata_array_size) {
-        pulsedata_array[pulse_count].pulse_width_high_time = high_time;
-        pulsedata_array[pulse_count].pulse_width_low_time = low_time;
-    } else {
-        printf("Error: Pulse count exceeds array size.\n");
-    }
 }
-
-// void read_pulse(uint gpio, uint32_t events) {
-//     uint32_t current_time = time_us_32();
-
-//     if (events & GPIO_IRQ_EDGE_RISE) {
-//         if (prev_fall_time != 0) {
-//             uint32_t pulse_width = current_time - prev_rise_time; // Calculate pulse width
-//             low_time = current_time - prev_fall_time; // Calculate low time
-//             printf("Pulse %d: Time - %u us, Width: %u us, High time: %u us, Low time: %u us\n", pulse_count + 1, current_time, pulse_width, high_time, low_time);
-//             pulse_count++;
-//         }
-//         prev_rise_time = current_time;
-//     } else if (events & GPIO_IRQ_EDGE_FALL) {
-//         high_time = current_time - prev_rise_time; // Calculate high time
-//         printf("Debug: Pulse %d: Calculated High Time = %u us\n", pulse_count + 1, high_time);
-//         prev_fall_time = current_time;
-//     }
-
-//     if (pulse_count >= PULSE_NUM) {
-//         gpio_set_irq_enabled_with_callback(PULSE_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false, &button_callback);
-//     }
-
-//     // Update pulsedata_array
-//     if (pulse_count < pulsedata_array_size) {
-//         pulsedata_array[pulse_count].pulse_width_high_time = high_time;
-//         pulsedata_array[pulse_count].pulse_width_low_time = low_time;
-//     } else {
-//         printf("Error: Pulse count exceeds array size.\n");
-//     }
-// }
-
-// void read_pulse(uint gpio, uint32_t events) {
-//     uint32_t current_time = time_us_32();
-
-//     if (events & GPIO_IRQ_EDGE_RISE) {
-//         if (prev_fall_time != 0) {
-//             uint32_t pulse_width = current_time - prev_rise_time; // Calculate pulse width
-//             low_time = current_time - prev_fall_time; // Calculate low time
-//             printf("Pulse %d: Time - %u us, Width: %u us, High time: %u us, Low time: %u us\n", pulse_count + 1, current_time, pulse_width, high_time, low_time);
-//             pulse_count++;
-//         }
-//         prev_rise_time = current_time;
-//     } else if (events & GPIO_IRQ_EDGE_FALL) {
-//         high_time = current_time - prev_rise_time; // Calculate high time
-//         printf("Debug: Pulse %d: Calculated High Time = %u us\n", pulse_count + 1, high_time);
-//         prev_fall_time = current_time;
-//     }
-
-//     if (pulse_count >= PULSE_NUM) {
-//         gpio_set_irq_enabled_with_callback(PULSE_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false, &button_callback);
-//     }
-
-//     // Update pulsedata_array
-//     if (pulse_count < pulsedata_array_size) {
-//         pulsedata_array[pulse_count].pulse_width_high_time = high_time;
-//         pulsedata_array[pulse_count].pulse_width_low_time = low_time;
-//     } else {
-//         printf("Error: Pulse count exceeds array size.\n");
-//     }
-// }
 
 // Reads the ADC value, calculates RMS, peak-to-peak, and SNR values, and prints the results.
 // Also prints the ADC values captured
@@ -686,12 +659,12 @@ bool measure_digi(struct repeating_timer *t)
         
         if (pulse_count < pulsedata_array_size) {
             // Add pulse data to the array
-            pulsedata_array[pulse_count].timestamp = time_us_32();
-            pulsedata_array[pulse_count].frequency = frequency;
-            pulsedata_array[pulse_count].duty_cycle = duty_cycle;
-            pulsedata_array[pulse_count].total_pulse_width = period;
-            pulsedata_array[pulse_count].pulse_width_high_time = high_time;
-            pulsedata_array[pulse_count].pulse_width_low_time = low_time;
+            // pulsedata_array[pulse_count].timestamp = time_us_32();
+            // pulsedata_array[pulse_count].frequency = frequency;
+            // pulsedata_array[pulse_count].duty_cycle = duty_cycle;
+            // pulsedata_array[pulse_count].total_pulse_width = period;
+            // pulsedata_array[pulse_count].pulse_width_high_time = high_time;
+            // pulsedata_array[pulse_count].pulse_width_low_time = low_time;
 
             pulse_count++;  // Increment pulse count
         }else{
