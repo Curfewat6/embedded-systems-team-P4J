@@ -18,6 +18,10 @@
 
 #include <time.h> // For random number generation
 
+#include "pico/mutex.h"
+//for my array to prevent simutaneous access
+mutex_t pulse_data_mutex;
+
 // Create instances for FATFS and FIL
 FATFS fs;
 FIL fil; // File object
@@ -77,6 +81,10 @@ volatile uint32_t total_width = 0;
 volatile uint32_t measurement_count = 0;
 volatile bool new_cycle_complete = false;
 
+void init_mutexes() {
+    mutex_init(&pulse_data_mutex);
+}
+
 // Declare Prototype Functions:
 // Pulse measurement functions
 void read_pulse(uint gpio, uint32_t events);
@@ -120,15 +128,7 @@ PulseData *pulsedata_array = NULL; // Pointer for dynamic memory allocation for 
 // uint32_t pulse_count = 0; //Counter to keep track of number of pulses
 uint32_t pulsedata_array_size = 0; // Size of the array (to make dynamic)
 
-// initialize the PulseData array
-// void initialize_pulsedata_array() {
-//     pulsedata_array_size = 10; //setting size for 10 pulses for now
-//     pulsedata_array = (PulseData *)malloc(pulsedata_array_size * sizeof(PulseData));
-//     if(pulsedata_array == NULL) {
-//         printf("Failed to allocate memory for PulseData array\n");
-//         exit(1);
-//     }
-// }
+
 void initialize_pulsedata_array(uint32_t size) {
     pulsedata_array_size = size;
     pulsedata_array = (PulseData *)malloc(pulsedata_array_size * sizeof(PulseData));
@@ -136,16 +136,22 @@ void initialize_pulsedata_array(uint32_t size) {
         printf("Failed to allocate memory for PulseData array\n");
         exit(1);
     }
+    printf("Initialized PulseData array with size: %u\n", pulsedata_array_size);
 }
 
 
 void resize_pulsedata_array(uint32_t new_size) {
-    pulsedata_array = (PulseData *)realloc(pulsedata_array, new_size * sizeof(PulseData));
+    // pulsedata_array = (PulseData *)realloc(pulsedata_array, new_size * sizeof(PulseData));
+    PulseData *temp = (PulseData *)realloc(pulsedata_array, new_size * sizeof(PulseData));
     if (pulsedata_array == NULL) {
         printf("Failed to reallocate memory for PulseData array\n");
+        free_pulsedata_array();
         exit(1);
     }
+    // pulsedata_array_size = new_size;
+    pulsedata_array = temp;
     pulsedata_array_size = new_size;
+    printf("Resized PulseData array to size: %u\n", pulsedata_array_size);
 }
 
 // ---------------------------------------------------------------
@@ -177,106 +183,7 @@ void print_fresult(FRESULT fr)
     }
 }
 
-// only pulse_width_high_time and pulse_width_low_time are saved to the file (binary)
-void save_pulse_sequence2(FIL *file)
-{
-    // UINT bw;
 
-    // // Create a buffer to store only the pulse_width_high_time and pulse_width_low_time
-    // uint32_t pulse_times[2 * pulse_count]; // Each pulse has two 32-bit values
-
-    // // Fill the buffer with the pulse_width_high_time and pulse_width_low_time from the pulsedata_array
-    // for (int i = 0; i < pulse_count; i++)
-    // {
-    //     pulse_times[2 * i] = pulsedata_array[i].pulse_width_high_time;
-    //     pulse_times[2 * i + 1] = pulsedata_array[i].pulse_width_low_time;
-    // }
-
-    // // Write the pulse_times array to the file in binary format
-    // FRESULT res = f_write(file, pulse_times, 2 * pulse_count * sizeof(uint32_t), &bw);
-
-    // // Check if the write operation was successful
-    // if (res != FR_OK || bw < 2 * pulse_count * sizeof(uint32_t))
-    // {
-    //     printf("Failed to write to file\n");
-    // }
-    // else
-    // {
-    //     printf("Successfully wrote %u pulses to file\n", pulse_count);
-    // }
-
-    UINT bw;
-    uint32_t pulse_times[2 * pulse_count];
-
-    for (int i = 0; i < pulse_count; i++) {
-        pulse_times[2 * i] = pulsedata_array[i].pulse_width_high_time;
-        pulse_times[2 * i + 1] = pulsedata_array[i].pulse_width_low_time;
-    }
-
-    FRESULT res = f_write(file, pulse_times, 2 * pulse_count * sizeof(uint32_t), &bw);
-    if (res != FR_OK || bw < 2 * pulse_count * sizeof(uint32_t)) {
-        printf("Failed to write to file\n");
-    } else {
-        printf("Successfully wrote %u pulses to file\n", pulse_count);
-    }
-}
-
-// only pulse_width_high_time and pulse_width_low_time are saved to the file (txt)
-void save_pulse_sequence_txt2(FIL *file)
-{
-    // UINT bw;
-    // FRESULT fr;
-    // char buffer[50]; // Buffer for each pair of values
-
-    // // Write the first pair without a leading space
-    // snprintf(buffer, sizeof(buffer), "%u %u",
-    //          pulsedata_array[0].pulse_width_high_time,
-    //          pulsedata_array[0].pulse_width_low_time);
-
-    // fr = f_write(file, buffer, strlen(buffer), &bw);
-    // if (fr != FR_OK || bw < strlen(buffer))
-    // {
-    //     printf("Failed to write to text file\n");
-    //     return;
-    // }
-
-    // // Write the remaining pairs with a leading space
-    // for (int i = 1; i < pulse_count; i++)
-    // {
-    //     snprintf(buffer, sizeof(buffer), " %u %u", // Note the leading space
-    //              pulsedata_array[i].pulse_width_high_time,
-    //              pulsedata_array[i].pulse_width_low_time);
-
-    //     fr = f_write(file, buffer, strlen(buffer), &bw);
-    //     if (fr != FR_OK || bw < strlen(buffer))
-    //     {
-    //         printf("Failed to write to text file\n");
-    //         break;
-    //     }
-    // }
-
-    // printf("Successfully wrote %u pulses to text file\n", pulse_count);
-
-    UINT bw;
-    FRESULT fr;
-    char buffer[50];  // Buffer for each pair of values
-    
-    for (int i = 0; i < pulse_count; i++) {
-        // For each high and low time, format as "high low "
-        snprintf(buffer, sizeof(buffer), "%u %u ", 
-                 pulsedata_array[i].pulse_width_high_time,
-                 pulsedata_array[i].pulse_width_low_time);
-
-        // Write to the file without a newline
-        fr = f_write(file, buffer, strlen(buffer), &bw);
-        if (fr != FR_OK || bw < strlen(buffer)) {
-            printf("Failed to write to text file\n");
-            break;
-        }
-    }
-
-    printf("Successfully wrote %u pulses to text file\n", pulse_count);
-}
 
 // freeing dynamic memory allocation for PulseData array
 void free_pulsedata_array()
@@ -288,235 +195,25 @@ void free_pulsedata_array()
     }
 }
 
+// performing freeing memory allocation for PulseData array
+// terminating of processes
 void cleanup_exit()
 {
     // Free dynamically allocated memory
     free_pulsedata_array();
-
     // Disable interrupts for buttons
     gpio_set_irq_enabled(WRITE_BTNPIN_20, GPIO_IRQ_EDGE_FALL, false);
     gpio_set_irq_enabled(READ_BTNPIN_21, GPIO_IRQ_EDGE_FALL, false);
     gpio_set_irq_enabled(EXIT_BTNPIN_22, GPIO_IRQ_EDGE_FALL, false);
-
     // Unmount filesystem if mounted
     if (fs_mounted)
     {
         f_unmount("");
         printf("Filesystem unmounted successfully\n");
     }
-
     // Exit the program
     printf("Exiting program...\n");
     exit(0); // Clean exit
-}
-
-int writePulseHighLowToSD()
-{
-    // printf("Starting write operation...\n");
-    // if (!fs_mounted)
-    // {
-    //     printf("Filesystem not mounted!\n");
-    //     return -1;
-    // }
-
-    // // Create a unique binary filename
-    // char bin_filename[20];
-    // snprintf(bin_filename, sizeof(bin_filename), "file%d.bin", filename_counter++); // Use .bin extension for binary file
-
-    // // Create a unique text filename
-    // char txt_filename[20];
-    // snprintf(txt_filename, sizeof(txt_filename), "file%d.txt", filename_counter++); // Use .txt extension for text file
-
-    // // Attempt to create and open the binary file for writing
-    // printf("Attempting to create binary file: %s\n", bin_filename);
-    // FRESULT fr = f_open(&fil, bin_filename, FA_WRITE | FA_CREATE_ALWAYS);
-    // if (fr != FR_OK)
-    // {
-    //     printf("Failed to open binary file for writing. Error code: ");
-    //     print_fresult(fr);
-    //     return -1;
-    // }
-    // printf("Binary file opened successfully\n");
-
-    // // Save the pulse sequence (only high and low times) to the binary file
-    // save_pulse_sequence2(&fil);
-
-    // // Close the binary file after writing the pulses
-    // f_close(&fil);
-    // printf("Binary file closed successfully\n");
-    // // -------------------------------------------------------------
-
-    // // Attempt to create and open the text file for writing
-    // printf("Attempting to create text file: %s\n", txt_filename);
-    // fr = f_open(&fil, txt_filename, FA_WRITE | FA_CREATE_ALWAYS);
-    // if (fr != FR_OK)
-    // {
-    //     printf("Failed to open text file for writing. Error code: ");
-    //     print_fresult(fr);
-    //     return -1;
-    // }
-    // printf("Text file opened successfully\n");
-
-    // // Write the pulse data (only high and low times) to the text file in a human-readable format
-    // save_pulse_sequence_txt2(&fil);
-
-    // // Close the text file after writing
-    // f_close(&fil);
-    // printf("Text file closed successfully\n");
-    // // -------------------------------------------------------------
-
-    // return 0;
-
-    printf("Starting write operation...\n");
-    if (!fs_mounted) {
-        printf("Filesystem not mounted!\n");
-        return -1;
-    }
-
-    // Create a unique binary filename
-    char bin_filename[20];
-    snprintf(bin_filename, sizeof(bin_filename), "file%d.bin", filename_counter++);
-
-    // Create a unique text filename
-    char txt_filename[20];
-    snprintf(txt_filename, sizeof(txt_filename), "file%d.txt", filename_counter++);
-
-    // Attempt to create and open the binary file for writing
-    printf("Attempting to create binary file: %s\n", bin_filename);
-    FRESULT fr = f_open(&fil, bin_filename, FA_WRITE | FA_CREATE_ALWAYS);
-    if (fr != FR_OK) {
-        printf("Failed to open binary file for writing. Error code: ");
-        print_fresult(fr);
-        return -1;
-    }
-    printf("Binary file opened successfully\n");
-
-    // Save the pulse sequence (only high and low times) to the binary file
-    save_pulse_sequence2(&fil);
-
-    // Close the binary file after writing the pulses
-    f_close(&fil);
-    printf("Binary file closed successfully\n");
-
-    // Attempt to create and open the text file for writing
-    printf("Attempting to create text file: %s\n", txt_filename);
-    fr = f_open(&fil, txt_filename, FA_WRITE | FA_CREATE_ALWAYS);
-    if (fr != FR_OK) {
-        printf("Failed to open text file for writing. Error code: ");
-        print_fresult(fr);
-        return -1;
-    }
-    printf("Text file opened successfully\n");
-
-    // Write the pulse data (only high and low times) to the text file in a human-readable format
-    save_pulse_sequence_txt2(&fil);
-
-    // Close the text file after writing
-    f_close(&fil);
-    printf("Text file closed successfully\n");
-
-    return 0;
-}
-
-// reading of my pico directly from sd card - list all files
-int readSD(void)
-{
-    printf("Starting read operation...\n");
-    if (!fs_mounted)
-    {
-        printf("Filesystem not mounted!\n");
-        return -1;
-    }
-
-    printf("Attempting to open directory...\n");
-    fr = f_opendir(&dir, "/");
-    if (fr != FR_OK)
-    {
-        printf("Failed to open directory: ");
-        print_fresult(fr);
-        return -1;
-    }
-
-    printf("SD card mounted successfully!\n");
-    printf("====================================================================\n");
-    printf("| %-20s | %-30s \n", "Name", "Pulse Data");
-    printf("====================================================================\n");
-
-    while (1)
-    {
-        fr = f_readdir(&dir, &fno);
-        if (fr != FR_OK || fno.fname[0] == 0)
-        {
-            break;
-        }
-
-        // If it's a file (not a directory) and has a .bin extension
-        if (!(fno.fattrib & AM_DIR) && strstr(fno.fname, ".bin"))
-        {
-            printf("| %-20s | \n", fno.fname);
-
-            // Calculate number of pulse pairs (each pulse has high and low time)
-            uint32_t file_size = fno.fsize;
-            uint32_t num_pulses = file_size / (2 * sizeof(uint32_t)); // Each pulse has 2 uint32_t values
-
-            if (num_pulses > 0)
-            {
-                // Allocate memory for high and low times
-                uint32_t *pulse_times = (uint32_t *)malloc(2 * num_pulses * sizeof(uint32_t));
-                if (pulse_times == NULL)
-                {
-                    printf("Failed to allocate memory for reading pulse data.\n");
-                    continue;
-                }
-
-                // Open the file for reading
-                fr = f_open(&fil, fno.fname, FA_READ);
-                if (fr == FR_OK)
-                {
-                    UINT br;
-                    fr = f_read(&fil, pulse_times, 2 * num_pulses * sizeof(uint32_t), &br);
-                    if (fr != FR_OK || br < 2 * num_pulses * sizeof(uint32_t))
-                    {
-                        printf("Failed to read pulse data from file (read %u bytes).\n", br);
-                    }
-                    else
-                    {
-                        // Print all the pulses read from the file
-                        for (int i = 0; i < num_pulses; i++)
-                        {
-                            printf("--- Digital Signal Analyzer33 ---\n");
-                            printf("Timestamp: %u\n", 123456789 + i * 100000); // Example timestamp
-
-                            uint32_t high_time = pulse_times[2 * i];
-                            uint32_t low_time = pulse_times[2 * i + 1];
-                            uint32_t total_time = high_time + low_time;
-                            float duty_cycle = (float)high_time / total_time * 100.0f;
-                            float frequency = 1000000.0f / total_time; // Convert to Hz
-
-                            printf("Frequency3333: %.2f Hz   Duty Cycle: %.2f%%\n", frequency, duty_cycle);
-                            printf("Total Pulse Width: %u us\n", total_time);
-                            printf("PW High Time: %u us   PW Low Time: %u us\n", high_time, low_time);
-                            printf("\n");
-                        }
-                    }
-                    f_close(&fil);
-                }
-                else
-                {
-                    printf("Failed to open file for reading: ");
-                    print_fresult(fr);
-                }
-                free(pulse_times);
-            }
-            else
-            {
-                printf("File %s is empty or contains no valid pulse data.\n", fno.fname);
-            }
-        }
-    }
-    printf("====================================================================\n");
-    f_closedir(&dir);
-    return 0;
 }
 
 volatile bool write_flag = false; // Flag for write operation
@@ -525,24 +222,24 @@ volatile bool read_flag = false;  // Flag for read operation
 void button_callback(uint gpio, uint32_t events)
 {
     absolute_time_t current_time = get_absolute_time();
-    // Debouncing logic
-    // if (absolute_time_diff_us(last_button_press, current_time) < DEBOUNCE_DELAY * 1000)
-    // {
-    //     return;
-    // }
+    // experimental Debouncing logic (if issues in reading from oscilloscope, comment out this)
+    if (absolute_time_diff_us(last_button_press, current_time) < DEBOUNCE_DELAY * 1000) {
+        return;
+    }
     last_button_press = current_time;
+
     // Set flags instead of directly calling writeToSD() or readSD()
-    // if button press is GP20, set write_flag to true -> writeToSD() will be called
     if (gpio == WRITE_BTNPIN_20)
     {
         write_flag = true;
-        // if button press is GP21, set read_flag to true -> readSD() will be called
+        // if button press is GP20, set write_flag to true -> writePulseHighLowToSD() will be called
     }
     else if (gpio == READ_BTNPIN_21)
     {
         read_flag = true;
+        // if button press is GP21, set read_flag to true -> readSD() will be called
     }
-    else if (gpio == PULSE_PIN) // taken from gpio callback - jl
+    if (gpio == PULSE_PIN) // migrated from gpio callback - jl
         read_pulse(gpio, events);
     else if (gpio == ADC_BTN_PIN)
     {
@@ -557,16 +254,15 @@ void button_callback(uint gpio, uint32_t events)
             adc_timer = false;
         }
     }
-    else if (gpio == DIGI_PIN)
+    if (gpio == DIGI_PIN){
         read_digi(gpio, events);
-    else
-        printf("Invalid Input!!!\n");
+    }
 }
 
 // to initialize the buttons
 void init_buttons(void)
 {
-    // Initialize the button GPIO - 20, 21
+    // Initialize the button GPIO - 20, 21, 22
     gpio_init(WRITE_BTNPIN_20);
     gpio_set_dir(WRITE_BTNPIN_20, GPIO_IN);
     gpio_pull_up(WRITE_BTNPIN_20);
@@ -582,23 +278,22 @@ void init_buttons(void)
     gpio_pull_up(EXIT_BTNPIN_22);
 
     // ---------------------------------------------------------------
-    gpio_init(PULSE_PIN);
+    gpio_init(PULSE_PIN); //GPIO Pin 2 for detecting pulse
     gpio_set_dir(PULSE_PIN, GPIO_IN);
     gpio_pull_down(PULSE_PIN);
 
-    gpio_init(ADC_PIN);
+    gpio_init(ADC_PIN); //GPIO Pin 26 for ADC
     gpio_set_dir(ADC_PIN, GPIO_IN);
     gpio_pull_up(ADC_PIN);
 
-    gpio_init(ADC_BTN_PIN);
+    gpio_init(ADC_BTN_PIN); //GPIO Pin 21 for ADC button
     gpio_set_dir(ADC_BTN_PIN, GPIO_IN);
     gpio_pull_up(ADC_BTN_PIN);
 
-    gpio_init(DIGI_PIN);
+    gpio_init(DIGI_PIN); //GPIO Pin 7 for digital signal
     gpio_set_dir(DIGI_PIN, GPIO_IN);
     gpio_pull_down(DIGI_PIN);
 
-    // Initialize GPIO interrupts
     gpio_set_irq_enabled_with_callback(PULSE_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, &button_callback);
     gpio_set_irq_enabled_with_callback(ADC_BTN_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, &button_callback);
     gpio_set_irq_enabled_with_callback(DIGI_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, &button_callback);
@@ -653,101 +348,164 @@ void init_system_with_filesystem()
     printf("Press GP20 to write a file, GP21 to read files\n");
 }
 
-int main()
-{
-    init_system_with_filesystem();
-
-    // pulse_count = 10;
-    // initialize_pulsedata_array();
-
-    setup_adc();
-    // simulate_pulse_sequence(pulse_count);
-
-    // Initialize timers
-    struct repeating_timer timer1, timer2;
-    add_repeating_timer_ms(ADC_SAMPLE_RATE, read_adc, NULL, &timer1); // Timer for reading ADC, 3s interval
-    add_repeating_timer_ms(1000, measure_digi, NULL, &timer2);        // Timer for reading digital signal, 1s interval
-
-    while (1)
-    {
-        // Check if the write button was pressed
-        if (write_flag)
-        {
-            write_flag = false;                   // Reset the flag
-            int result = writePulseHighLowToSD(); // Perform the write operation
-            printf("WriteToSD result: %d\n", result);
-        }
-        // Check if the read button was pressed
-        if (read_flag)
-        {
-            read_flag = false;     // Reset the flag
-            int result = readSD(); // Perform the read operation
-            printf("ReadSD result: %d\n", result);
-        }
-
-        // Check if the exit button (GP22) is pressed
-        if (gpio_get(EXIT_BTNPIN_22) == 0)
-        { // Button pressed (active low)
-            printf("Exit button pressed. Exiting the loop...\n");
-            break; // Exit the loop
-        }
-
-        tight_loop_contents(); // Prevent the system from sleeping and keep checking
-        sleep_ms(100);         // Add a delay to reduce CPU usage
-    }
-    // free_pulsedata_array();
-    cleanup_exit();
-    printf("Program exited\n");
-    return 0; // This will never be reached
-}
-
-// ---------------------------------------------------------------
-
-// Interrupt callback function, determines which GPIO triggered the interrupt
-void gpio_callback(uint gpio, uint32_t events)
-{
-    if (gpio == PULSE_PIN)
-        read_pulse(gpio, events);
-    else if (gpio == ADC_BTN_PIN)
-    {
-        if (events & GPIO_IRQ_EDGE_FALL)
-        {
-            printf("Reading ADC ...\n");
-            adc_timer = true;
-        }
-        else
-        {
-            printf("Reading ADC Stopped.\n");
-            adc_timer = false;
-        }
-    }
-    else if (gpio == DIGI_PIN)
-        read_digi(gpio, events);
-    else
-        printf("Invalid Input!!!\n");
-}
-
 // Only measures up to 10 pulses, then disables the interrupt. Prints pulse width of each pulse
-void read_pulse(uint gpio, uint32_t events)
-{
+// void read_pulse(uint gpio, uint32_t events) {
+//     // Enter the mutex to protect shared resources
+//     // mutex_enter_blocking(&pulse_data_mutex);
+
+//     uint32_t current_time = time_us_32();
+
+//     if (events & GPIO_IRQ_EDGE_RISE) {
+//         if (prev_fall_time != 0) {
+//             uint32_t pulse_width = current_time - prev_rise_time; // Calculate pulse width
+//             low_time = current_time - last_fall_time;
+//             printf("Pulse %d: Time - %u us, Width: %u us, High time: %u us, Low time: %u us\n", pulse_count + 1, current_time, pulse_width, high_time, low_time);
+//             pulse_count++;
+
+//             // low_time = current_time - prev_fall_time;
+//             printf("Debug: Calculated Low Time = %u us\n", low_time);
+//             // pulse_count++;
+//         }
+//         prev_rise_time = current_time;
+//     } else if (events & GPIO_IRQ_EDGE_FALL) {
+//         high_time = current_time - prev_rise_time;
+//         printf("Debug: Calculated High Time = %u us\n", high_time);
+//         prev_fall_time = current_time;
+//     }
+
+//     if (pulse_count >= PULSE_NUM) {
+//         gpio_set_irq_enabled_with_callback(PULSE_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false, &button_callback);
+//     }
+
+//     // Update pulsedata_array
+//     // Exit the mutex once done
+//     // mutex_exit(&pulse_data_mutex);
+// }
+
+// void read_pulse(uint gpio, uint32_t events) {
+//     uint32_t current_time = time_us_32();
+
+//     if (events & GPIO_IRQ_EDGE_RISE) {
+//         if (prev_fall_time != 0) {
+//             uint32_t pulse_width = current_time - prev_rise_time; // Calculate pulse width
+//             low_time = current_time - last_fall_time;
+//             printf("Pulse %d: Time - %u us, Width: %u us, High time: %u us, Low time: %u us\n", pulse_count + 1, current_time, pulse_width, high_time, low_time);
+//             // low_time = current_time - prev_fall_time;
+//             // printf("Debug: Pulse %d: Calculated Low Time = %u us\n", pulse_count + 1, low_time);
+//             pulse_count++;
+
+            
+//             // pulse_count++;
+//         }
+//         prev_rise_time = current_time;
+//     } else if (events & GPIO_IRQ_EDGE_FALL) {
+//         high_time = current_time - prev_rise_time;
+//         printf("Debug: Pulse %d: Calculated High Time = %u us\n", pulse_count+1, high_time);
+//         prev_fall_time = current_time;
+//     }
+
+//     if (pulse_count >= PULSE_NUM) {
+//         gpio_set_irq_enabled_with_callback(PULSE_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false, &button_callback);
+//     }
+
+//     // Update pulsedata_array
+//     if (pulse_count < pulsedata_array_size) {
+//         pulsedata_array[pulse_count].pulse_width_high_time = high_time;
+//         pulsedata_array[pulse_count].pulse_width_low_time = low_time;
+//     } else {
+//         printf("Error: Pulse count exceeds array size.\n");
+//     }
+// }
+
+void read_pulse(uint gpio, uint32_t events) {
     uint32_t current_time = time_us_32();
 
-    if (events & GPIO_IRQ_EDGE_RISE)
-    {
-        if (prev_fall_time != 0)
-        {
+    if (events & GPIO_IRQ_EDGE_RISE) {
+        if (prev_fall_time != 0) {
             uint32_t pulse_width = current_time - prev_rise_time; // Calculate pulse width
-            printf("Pulse %d: Time - %u us, Width: %u us\n", pulse_count + 1, current_time, pulse_width);
+            low_time = current_time - prev_fall_time; // Calculate low time
+            printf("Pulse %d: Time - %u us, Width: %u us, High time: %u us, Low time: %u us\n", pulse_count + 1, current_time, pulse_width, high_time, low_time);
             pulse_count++;
         }
-        prev_rise_time = current_time; // Update previous rising edge time
-    }
-    else if (events & GPIO_IRQ_EDGE_FALL)
+        prev_rise_time = current_time;
+    } else if (events & GPIO_IRQ_EDGE_FALL) {
+        high_time = current_time - prev_rise_time; // Calculate high time
+        printf("Debug: Pulse %d: Calculated High Time = %u us\n", pulse_count + 1, high_time);
         prev_fall_time = current_time;
+    }
 
-    if (pulse_count >= PULSE_NUM)
-        gpio_set_irq_enabled_with_callback(PULSE_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false, &gpio_callback);
+    if (pulse_count >= PULSE_NUM) {
+        gpio_set_irq_enabled_with_callback(PULSE_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false, &button_callback);
+    }
+
+    // Update pulsedata_array
+    if (pulse_count < pulsedata_array_size) {
+        pulsedata_array[pulse_count].pulse_width_high_time = high_time;
+        pulsedata_array[pulse_count].pulse_width_low_time = low_time;
+    } else {
+        printf("Error: Pulse count exceeds array size.\n");
+    }
 }
+
+// void read_pulse(uint gpio, uint32_t events) {
+//     uint32_t current_time = time_us_32();
+
+//     if (events & GPIO_IRQ_EDGE_RISE) {
+//         if (prev_fall_time != 0) {
+//             uint32_t pulse_width = current_time - prev_rise_time; // Calculate pulse width
+//             low_time = current_time - prev_fall_time; // Calculate low time
+//             printf("Pulse %d: Time - %u us, Width: %u us, High time: %u us, Low time: %u us\n", pulse_count + 1, current_time, pulse_width, high_time, low_time);
+//             pulse_count++;
+//         }
+//         prev_rise_time = current_time;
+//     } else if (events & GPIO_IRQ_EDGE_FALL) {
+//         high_time = current_time - prev_rise_time; // Calculate high time
+//         printf("Debug: Pulse %d: Calculated High Time = %u us\n", pulse_count + 1, high_time);
+//         prev_fall_time = current_time;
+//     }
+
+//     if (pulse_count >= PULSE_NUM) {
+//         gpio_set_irq_enabled_with_callback(PULSE_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false, &button_callback);
+//     }
+
+//     // Update pulsedata_array
+//     if (pulse_count < pulsedata_array_size) {
+//         pulsedata_array[pulse_count].pulse_width_high_time = high_time;
+//         pulsedata_array[pulse_count].pulse_width_low_time = low_time;
+//     } else {
+//         printf("Error: Pulse count exceeds array size.\n");
+//     }
+// }
+
+// void read_pulse(uint gpio, uint32_t events) {
+//     uint32_t current_time = time_us_32();
+
+//     if (events & GPIO_IRQ_EDGE_RISE) {
+//         if (prev_fall_time != 0) {
+//             uint32_t pulse_width = current_time - prev_rise_time; // Calculate pulse width
+//             low_time = current_time - prev_fall_time; // Calculate low time
+//             printf("Pulse %d: Time - %u us, Width: %u us, High time: %u us, Low time: %u us\n", pulse_count + 1, current_time, pulse_width, high_time, low_time);
+//             pulse_count++;
+//         }
+//         prev_rise_time = current_time;
+//     } else if (events & GPIO_IRQ_EDGE_FALL) {
+//         high_time = current_time - prev_rise_time; // Calculate high time
+//         printf("Debug: Pulse %d: Calculated High Time = %u us\n", pulse_count + 1, high_time);
+//         prev_fall_time = current_time;
+//     }
+
+//     if (pulse_count >= PULSE_NUM) {
+//         gpio_set_irq_enabled_with_callback(PULSE_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false, &button_callback);
+//     }
+
+//     // Update pulsedata_array
+//     if (pulse_count < pulsedata_array_size) {
+//         pulsedata_array[pulse_count].pulse_width_high_time = high_time;
+//         pulsedata_array[pulse_count].pulse_width_low_time = low_time;
+//     } else {
+//         printf("Error: Pulse count exceeds array size.\n");
+//     }
+// }
 
 // Reads the ADC value, calculates RMS, peak-to-peak, and SNR values, and prints the results.
 // Also prints the ADC values captured
@@ -779,7 +537,6 @@ bool read_adc(struct repeating_timer *t)
             memset(adc_scan_buffer, 0, BUFFER_SIZE);
         }
     }
-
     return true;
 }
 
@@ -807,7 +564,6 @@ float calculate_peak_to_peak()
         if (adc_signal[i] > max_value)
             max_value = adc_signal[i];
     }
-
     return max_value - min_value;
 }
 
@@ -910,23 +666,7 @@ void read_digi(uint gpio, uint32_t events)
 // Prints the results of the digital signal analysis if a new cycle is complete
 bool measure_digi(struct repeating_timer *t)
 {
-    // if (new_cycle_complete)
-    // {
-    //     float frequency = digi_calculate_frequency(); // Calculate frequency
-    //     float duty_cycle = calculate_duty_cycle();    // Calculate duty cycle
-
-    //     // Print results
-    //     printf("\n--- Digital Signal Analyzer ---\n");
-    //     printf("Frequency: %.2f Hz\tDuty Cycle: %.2f%%\n", frequency, duty_cycle);
-    //     printf("Total Pulse Width: %u us\n", period); // Total pulse width
-    //     printf("PW High Time: %u us\tPW Low Time: %u us\n", high_time, low_time);
-
-    //     // Reset for the next cycle
-    //     new_cycle_complete = false;
-    //     total_width = 0;
-    //     measurement_count = 0;
-    // }
-    // return true; // Keep the timer running
+    // mutex_enter_blocking(&pulse_data_mutex);
 
     if (new_cycle_complete) {
         float frequency = digi_calculate_frequency(); // Calculate frequency
@@ -944,21 +684,27 @@ bool measure_digi(struct repeating_timer *t)
             resize_pulsedata_array(pulsedata_array_size * 2); // Double the size as needed
         }
         
-        // Add pulse data to the array
-        pulsedata_array[pulse_count].timestamp = time_us_32();
-        pulsedata_array[pulse_count].frequency = frequency;
-        pulsedata_array[pulse_count].duty_cycle = duty_cycle;
-        pulsedata_array[pulse_count].total_pulse_width = period;
-        pulsedata_array[pulse_count].pulse_width_high_time = high_time;
-        pulsedata_array[pulse_count].pulse_width_low_time = low_time;
+        if (pulse_count < pulsedata_array_size) {
+            // Add pulse data to the array
+            pulsedata_array[pulse_count].timestamp = time_us_32();
+            pulsedata_array[pulse_count].frequency = frequency;
+            pulsedata_array[pulse_count].duty_cycle = duty_cycle;
+            pulsedata_array[pulse_count].total_pulse_width = period;
+            pulsedata_array[pulse_count].pulse_width_high_time = high_time;
+            pulsedata_array[pulse_count].pulse_width_low_time = low_time;
 
-        pulse_count++;  // Increment pulse count
+            pulse_count++;  // Increment pulse count
+        }else{
+            printf("Error: Pulse count exceeds array size.\n");
+        }
+        
         
         // Reset for the next cycle
         new_cycle_complete = false;
         total_width = 0;
         measurement_count = 0;
     }
+    // mutex_exit(&pulse_data_mutex);
     return true; // Keep the timer running
 }
 
@@ -984,4 +730,268 @@ float calculate_duty_cycle()
     }
     return 0.0f; // Avoid division by zero
 }
-///  ---------------------------------------------------------------
+
+// only pulse_width_high_time and pulse_width_low_time are saved to the file (binary)
+void savepulse_sequenceToBin(FIL *file)
+{
+    UINT bw;
+    // Pointer to the data buffer containing the pulse times to be written to the file.
+    uint32_t pulse_times[2 * pulse_count];
+
+    for (int i = 0; i < pulse_count; i++) {
+        pulse_times[2 * i] = pulsedata_array[i].pulse_width_high_time;
+        pulse_times[2 * i + 1] = pulsedata_array[i].pulse_width_low_time;
+    }
+    // 2 * pulse_count * sizeof(uint32_t) -> Specifies the number of bytes to write.
+    FRESULT res = f_write(file, pulse_times, 2 * pulse_count * sizeof(uint32_t), &bw);
+    // checking result of file operation
+    if (res != FR_OK || bw < 2 * pulse_count * sizeof(uint32_t)) {
+        printf("Failed to write to file\n");
+    } else {
+        printf("Successfully wrote %u pulses to file\n", pulse_count);
+    }
+}
+
+// only pulse_width_high_time and pulse_width_low_time are saved to the file (txt)
+void savepulse_sequence_toTxt(FIL *file) {
+    UINT bw;
+    FRESULT fr;
+    char buffer[50];
+    
+    // Iterate over each valid entry in pulsedata_array and write high/low times
+    for (uint32_t i = 0; i < pulse_count; i++) {
+        printf("Debug: Pulse %d - High Time: %u, Low Time: %u\n", 
+               i + 1, 
+               pulsedata_array[i].pulse_width_high_time,
+               pulsedata_array[i].pulse_width_low_time);
+               
+        snprintf(buffer, sizeof(buffer), "%u %u ", 
+                 pulsedata_array[i].pulse_width_high_time,
+                 pulsedata_array[i].pulse_width_low_time);
+
+        fr = f_write(file, buffer, strlen(buffer), &bw);
+        if (fr != FR_OK || bw < strlen(buffer)) {
+            printf("Failed to write to text file\n");
+            break;
+        }
+        printf("Saving pulse %d: High = %u, Low = %u\n", i + 1, 
+               pulsedata_array[i].pulse_width_high_time, 
+               pulsedata_array[i].pulse_width_low_time);
+    }
+    printf("Successfully wrote %u pulses to text file\n", pulse_count);
+}
+
+int writePulseHighLowToSD()
+{
+    // mutex_enter_blocking(&pulse_data_mutex);
+
+    printf("Starting write operation...\n");
+    // check if fs is working properly
+    if (!fs_mounted) {
+        printf("Filesystem not mounted!\n");
+        return -1;
+    }
+
+    // Create a unique binary filename
+    char bin_filename[20];
+    snprintf(bin_filename, sizeof(bin_filename), "file%d.bin", filename_counter++);
+
+    // Create a unique text filename
+    char txt_filename[20];
+    snprintf(txt_filename, sizeof(txt_filename), "file%d.txt", filename_counter++);
+
+    // writing binary -----------------------------------------------
+    // Attempt to create and open the binary file for writing
+    printf("Attempting to create binary file: %s\n", bin_filename);
+    FRESULT fr = f_open(&fil, bin_filename, FA_WRITE | FA_CREATE_ALWAYS);
+    if (fr != FR_OK) {
+        printf("Failed to open binary file for writing. Error code: ");
+        print_fresult(fr);
+        return -1;
+    }
+    printf("Binary file opened successfully\n");
+    // Save the pulse sequence (only high and low times) to the binary file
+    savepulse_sequenceToBin(&fil);
+    // Close the binary file after writing the pulses
+    f_close(&fil);
+    printf("Binary file closed successfully\n");
+    // -------------------------------------------------------------
+
+    // writing text ------------------------------------------------
+    // Attempt to create and open the text file for writing
+    printf("Attempting to create text file: %s\n", txt_filename);
+    fr = f_open(&fil, txt_filename, FA_WRITE | FA_CREATE_ALWAYS);
+    if (fr != FR_OK) {
+        printf("Failed to open text file for writing. Error code: ");
+        print_fresult(fr);
+        return -1;
+    }
+    printf("Text file opened successfully\n");
+    // Write the pulse data (only high and low times) to the text file in a human-readable format
+    savepulse_sequence_toTxt(&fil);
+    // Close the text file after writing
+    f_close(&fil);
+    printf("Text file closed successfully\n");
+    // -----------------------------------------------------------
+    
+    // Clear the array and reset pulse count
+    // currently with this code, reading via GP21 will not work
+    memset(pulsedata_array, 0, pulsedata_array_size * sizeof(PulseData));
+    pulse_count = 0;
+
+    // mutex_exit(&pulse_data_mutex);
+    return 0;
+}
+
+// reading from sd card - list all files (from pico)
+int readSD(void)
+{
+    printf("Starting read operation...\n");
+    // performing check if fs is working properly
+    if (!fs_mounted)
+    {
+        printf("Filesystem not mounted!\n");
+        return -1;
+    }
+    printf("Attempting to open directory...\n");
+    fr = f_opendir(&dir, "/");
+    if (fr != FR_OK)
+    {
+        printf("Failed to open directory: ");
+        print_fresult(fr);
+        return -1;
+    }
+    // simple design for easier viewing
+    printf("SD card mounted successfully!\n");
+    printf("====================================================================\n");
+    printf("| %-20s | %-30s \n", "Name", "Pulse Data");
+    printf("====================================================================\n");
+
+    while (1)
+    {
+        fr = f_readdir(&dir, &fno);
+        if (fr != FR_OK || fno.fname[0] == 0)
+        {
+            break;
+        }
+
+        // If it's a file (not a directory) and has a .bin extension
+        if (!(fno.fattrib & AM_DIR) && strstr(fno.fname, ".bin"))
+        {
+            // display file name
+            printf("| %-20s | \n", fno.fname);
+            // Calculate number of pulse pairs (each pulse has high and low time)
+            uint32_t file_size = fno.fsize;
+            uint32_t num_pulses = file_size / (2 * sizeof(uint32_t)); // Each pulse has 2 uint32_t values
+
+            if (num_pulses > 0)
+            {
+                // Allocate memory for high and low times
+                uint32_t *pulse_times = (uint32_t *)malloc(2 * num_pulses * sizeof(uint32_t));
+                if (pulse_times == NULL)
+                {
+                    printf("Failed to allocate memory for reading pulse data.\n");
+                    continue;
+                }
+
+                // Open the file for reading
+                fr = f_open(&fil, fno.fname, FA_READ);
+                if (fr == FR_OK)
+                {
+                    UINT br;
+                    fr = f_read(&fil, pulse_times, 2 * num_pulses * sizeof(uint32_t), &br);
+                    if (fr != FR_OK || br < 2 * num_pulses * sizeof(uint32_t))
+                    {
+                        printf("Failed to read pulse data from file (read %u bytes).\n", br);
+                    }
+                    else
+                    {
+                        // Print all the pulses read from the file
+                        for (int i = 0; i < num_pulses; i++)
+                        {
+                            printf("--- Digital Signal Analyzer33 ---\n");
+                            printf("Timestamp: %u\n", 123456789 + i * 100000); // Example timestamp
+
+                            uint32_t high_time = pulse_times[2 * i];
+                            uint32_t low_time = pulse_times[2 * i + 1];
+                            uint32_t total_time = high_time + low_time;
+                            float duty_cycle = (float)high_time / total_time * 100.0f;
+                            float frequency = 1000000.0f / total_time; // Convert to Hz
+
+                            printf("Frequency33: %.2f Hz   Duty Cycle: %.2f%%\n", frequency, duty_cycle);
+                            printf("Total Pulse Width: %u us\n", total_time);
+                            printf("PW High Time: %u us   PW Low Time: %u us\n", high_time, low_time);
+                            printf("\n");
+                        }
+                    }
+                    f_close(&fil);
+                }
+                else
+                {
+                    printf("Failed to open file for reading: ");
+                    print_fresult(fr);
+                }
+                free(pulse_times);
+            }
+            else
+            {
+                printf("File %s is empty or contains no valid pulse data.\n", fno.fname);
+            }
+        }
+    }
+    printf("====================================================================\n");
+    f_closedir(&dir);
+    return 0;
+}
+
+int main()
+{
+    free_pulsedata_array();
+    init_system_with_filesystem();
+    setup_adc();
+    // simulate_pulse_sequence(pulse_count);
+
+    // initialize pulsedata array to 10 -> for 10 pulses atm
+    initialize_pulsedata_array(10);
+
+    // Initialize timers
+    struct repeating_timer timer1, timer2;
+    add_repeating_timer_ms(ADC_SAMPLE_RATE, read_adc, NULL, &timer1); // Timer for reading ADC, 3s interval
+    add_repeating_timer_ms(1000, measure_digi, NULL, &timer2);        // Timer for reading digital signal, 1s interval
+
+    while (1)
+    {
+        // Check if the write button was pressed
+        if (write_flag)
+        {
+            write_flag = false;                   // Reset the flag
+            int result = writePulseHighLowToSD(); // Perform the write operation
+            printf("WriteToSD result: %d\n", result);
+        }
+        // Check if the read button was pressed
+        if (read_flag)
+        {
+            read_flag = false;     // Reset the flag
+            int result = readSD(); // Perform the read operation
+            printf("ReadSD result: %d\n", result);
+        }
+
+        // Check if the exit button (GP22) is pressed
+        if (gpio_get(EXIT_BTNPIN_22) == 0)
+        { // Button pressed (active low)
+            printf("Exit button pressed. Exiting the loop...\n");
+            cleanup_exit();
+            break; // Exit the loop
+        }
+
+        tight_loop_contents(); // Prevent the system from sleeping and keep checking
+        sleep_ms(100);         // Add a delay to reduce CPU usage
+    }
+    // free_pulsedata_array();
+    cleanup_exit();
+    printf("Program exited\n");
+    return 0; // This will never be reached
+}
+
+
+
