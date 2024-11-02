@@ -348,105 +348,6 @@ void init_system_with_filesystem()
     printf("Press GP20 to write a file, GP21 to read files\n");
 }
 
-// void read_pulse(uint gpio, uint32_t events) {
-//     uint32_t current_time = time_us_32();
-
-//     if (events & GPIO_IRQ_EDGE_RISE) {
-//         if (prev_fall_time != 0) {
-//             uint32_t pulse_width = current_time - prev_rise_time; // Calculate pulse width
-//             low_time = current_time - last_fall_time;
-//             printf("Pulse %d: Time - %u us, Width: %u us, High time: %u us, Low time: %u us\n", pulse_count + 1, current_time, pulse_width, high_time, low_time);
-//             // low_time = current_time - prev_fall_time;
-//             // printf("Debug: Pulse %d: Calculated Low Time = %u us\n", pulse_count + 1, low_time);
-//             pulse_count++;
-
-            
-//             // pulse_count++;
-//         }
-//         prev_rise_time = current_time;
-//     } else if (events & GPIO_IRQ_EDGE_FALL) {
-//         high_time = current_time - prev_rise_time;
-//         printf("Debug: Pulse %d: Calculated High Time = %u us\n", pulse_count+1, high_time);
-//         prev_fall_time = current_time;
-//     }
-
-//     if (pulse_count >= PULSE_NUM) {
-//         gpio_set_irq_enabled_with_callback(PULSE_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false, &button_callback);
-//     }
-
-//     // Update pulsedata_array
-//     if (pulse_count < pulsedata_array_size) {
-//         pulsedata_array[pulse_count].pulse_width_high_time = high_time;
-//         pulsedata_array[pulse_count].pulse_width_low_time = low_time;
-//     } else {
-//         printf("Error: Pulse count exceeds array size.\n");
-//     }
-// }
-
-
-// this version of read_pulse can read high time to txt file but low time to txt is not working
-// void read_pulse(uint gpio, uint32_t events) {
-//     uint32_t current_time = time_us_32();
-
-//     if (events & GPIO_IRQ_EDGE_RISE) {
-//         if (prev_fall_time != 0) {
-//             uint32_t pulse_width = current_time - prev_rise_time; // Calculate pulse width
-//             low_time = current_time - prev_fall_time; // Calculate low time
-//             printf("Pulse %d: Time - %u us, Width: %u us, High time: %u us, Low time: %u us\n", pulse_count + 1, current_time, pulse_width, high_time, low_time);
-//             pulse_count++;
-//         }
-//         prev_rise_time = current_time;
-//     } else if (events & GPIO_IRQ_EDGE_FALL) {
-//         high_time = current_time - prev_rise_time; // Calculate high time
-//         printf("Debug: Pulse %d: Calculated High Time = %u us\n", pulse_count + 1, high_time);
-//         prev_fall_time = current_time;
-//     }
-
-//     if (pulse_count >= PULSE_NUM) {
-//         gpio_set_irq_enabled_with_callback(PULSE_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false, &button_callback);
-//     }
-
-//     // Update pulsedata_array
-//     if (pulse_count < pulsedata_array_size) {
-//         pulsedata_array[pulse_count].pulse_width_high_time = high_time;
-//         pulsedata_array[pulse_count].pulse_width_low_time = low_time;
-//     } else {
-//         printf("Error: Pulse count exceeds array size.\n");
-//     }
-// }
-
-// this version of read_pulse can read high time to txt file but low time to txt is not working
-// void read_pulse(uint gpio, uint32_t events) {
-//     uint32_t current_time = time_us_32();
-
-//     if (events & GPIO_IRQ_EDGE_RISE) {
-//         if (prev_fall_time != 0) {
-//             uint32_t pulse_width = current_time - prev_rise_time; // Calculate pulse width
-//             low_time = current_time - prev_fall_time; // Calculate low time
-//             printf("Pulse %d: Time - %u us, Width: %u us, High time: %u us, Low time: %u us\n", pulse_count + 1, current_time, pulse_width, high_time, low_time);
-//             pulse_count++;
-//         }
-//         prev_rise_time = current_time;
-//     } else if (events & GPIO_IRQ_EDGE_FALL) {
-//         high_time = current_time - prev_rise_time; // Calculate high time
-//         printf("Debug: Pulse %d: Calculated High Time = %u us\n", pulse_count + 1, high_time);
-//         prev_fall_time = current_time;
-//     }
-
-//     if (pulse_count >= PULSE_NUM) {
-//         gpio_set_irq_enabled_with_callback(PULSE_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false, &button_callback);
-//     }
-
-//     // Update pulsedata_array
-//     if (pulse_count < pulsedata_array_size) {
-//         pulsedata_array[pulse_count].pulse_width_high_time = high_time;
-//         pulsedata_array[pulse_count].pulse_width_low_time = low_time;
-//     } else {
-//         printf("Error: Pulse count exceeds array size.\n");
-//     }
-// }
-
-
 // seems to work fine writing high time and low time to txt correctly based on output.
 void read_pulse(uint gpio, uint32_t events) {
     uint32_t current_time = time_us_32();
@@ -917,6 +818,53 @@ int readSD(void)
     return 0;
 }
 
+
+//testing
+int retrievePulseDataFromTxt(const char *filename)
+{
+    printf("Starting read operation for file: %s\n", filename);
+    // Check if the filesystem is mounted
+    if (!fs_mounted) {
+        printf("Filesystem not mounted!\n");
+        return -1;
+    }
+
+    // Open the specified file for reading
+    FRESULT fr = f_open(&fil, filename, FA_READ);
+    if (fr != FR_OK) {
+        printf("Failed to open file for reading: ");
+        print_fresult(fr);
+        return -1;
+    }
+
+    printf("File opened successfully: %s\n", filename);
+    printf("====================================================================\n");
+    printf("| %-20s | %-30s \n", "Name", "File Content");
+    printf("====================================================================\n");
+
+    // Display file name
+    printf("| %-20s | ", filename);
+
+    // Read the file contents
+    char buffer[128];
+    UINT br;
+    while ((fr = f_read(&fil, buffer, sizeof(buffer) - 1, &br)) == FR_OK && br > 0) {
+        buffer[br] = '\0';  // Null-terminate the string
+        printf("%s", buffer);  // Print file contents
+    }
+    if (fr != FR_OK) {
+        printf("Failed to read from file: ");
+        print_fresult(fr);
+    }
+
+    printf("\n====================================================================\n");
+
+    // Close the file after reading
+    f_close(&fil);
+    return 0;
+}
+
+
 int main()
 {
     free_pulsedata_array();
@@ -945,7 +893,10 @@ int main()
         if (read_flag)
         {
             read_flag = false;     // Reset the flag
-            int result = readSD(); // Perform the read operation
+            // int result = readSD(); // Perform the read operation 
+            
+            // experimental 
+            int result = retrievePulseDataFromTxt("file2.txt");
             printf("ReadSD result: %d\n", result);
         }
 
