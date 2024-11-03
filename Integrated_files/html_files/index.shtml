@@ -1,0 +1,49 @@
+/index.shtml HTTP/1.0 200 OK
+Server: lwIP/pre-0.6 (http://www.sics.se/~adam/lwip/)
+Content-type: text/html
+
+<!DOCTYPE html>
+<html>
+    <head> 
+        <title>PicoW Webserver</title> 
+    </head>
+    <body> <h1>Our Project Webserver</h1>
+        <br>
+        <h2>SSI Prove of Concept:</h2>
+        <p>Voltage: <!--#volt--></p>
+        <p>Temp: <!--#temp--> C</p>
+        <p>LED is: <!--#led--></p>
+        <br>
+        <h2>CGI Prove of Concept</h2>
+        <a href="/led.cgi?led=1"><button>LED ON</button></a>
+        <a href="/led.cgi?led=0"><button>LED OFF</button></a>
+        <br>
+        <br>
+        <h2>Select a Letter to send over to Pico W</h2>
+        <form action="/letter.cgi" method="get"> <!-- Adjust method if needed -->
+            <label for="letter">Choose a letter: </label>
+            <select id="letter" name="letter">
+                <option value="A">A</option>
+                <option value="B">B</option>
+                <option value="C">C</option>
+                <option value="D">D</option>
+                <option value="E">E</option>
+            </select>
+            <br><br>
+            <input type="submit" value="Submit">
+        </form>
+        <br>
+        <br>
+        <h2>Click here to get IDCODE</h2>
+        <a href="/debug.cgi?debug=1"><button>Get IDCODE</button></a>
+        <br>
+        <p>IDCODE: <!--#idcode--></p>        
+        <br>
+        <p>Last 10 PWM Frequencies (Hz): <!--#pwm_freq--></p>
+        <p>Last 10 PWM Duty Cycles     : <!--#pwm_dc--></p>
+        <p>Last 10 ADC Frequencies (Hz): <!--#adc_freq--></p>
+
+        <a href="/index.shtml">Refresh</a>
+        <a href="/data.shtml">Go to Home</a>
+   </body>
+</html>
