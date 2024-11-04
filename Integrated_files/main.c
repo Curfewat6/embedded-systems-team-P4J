@@ -28,8 +28,8 @@
 #define LED_PIN 0
 
 // Define your WiFi credentials
-#define WIFI_SSID01 "TP-Link_E4A4"
-#define WIFI_PASSWD01 "84330369"
+#define WIFI_SSID01 ""
+#define WIFI_PASSWD01 ""
 
 TaskHandle_t sntp_handle = NULL;
 TaskHandle_t debug_handle = NULL;
