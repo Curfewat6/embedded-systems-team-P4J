@@ -6,7 +6,19 @@
 #define SWDIO_PIN 3  // GPIO pin for SWDIO
 #define PWR_DBG 0x50000000  // Command to enable debug power
 #define DHCSR 0xE000EDF0  // DHCSR address
-#define DBGKEY 0xA05F0000 // Debug key
+#define HALT 0xA05F0003
+#define RESUME 0xA05F0001
+#define STEP 0xA05F0005
+
+
+bool parity_bit(uint32_t data) {
+    bool parity = 0;
+    while (data) {
+        parity ^= (data & 1);
+        data >>= 1;
+    }
+    return parity;
+}
 
 void pulse_swclk(int cycles) {
     for (int i = 0; i < cycles; i++) {
@@ -19,11 +31,6 @@ void pulse_swclk(int cycles) {
 
 void swdSetWriteMode() {
     gpio_set_dir(SWDIO_PIN, GPIO_OUT);
-    pulse_swclk(1);
-}
-
-void swdSetReadMode() {
-    gpio_set_dir(SWDIO_PIN, GPIO_IN);
     pulse_swclk(1);
 }
 
@@ -65,13 +72,13 @@ void swd_send_request(uint8_t request) {
         swdWriteBit((request >> i) & 0x1);
     }
 }
-
+ 
 void turnaround() {
     gpio_set_dir(SWDIO_PIN, GPIO_IN);
     pulse_swclk(1);
 }
 
-uint32_t swd_read_idcode() {
+uint32_t read_incoming() {
     uint32_t idcode = 0;
     for (int i = 0; i < 32; i++) {
         gpio_put(SWCLK_PIN, 0);
@@ -92,7 +99,7 @@ void swd_read_ack() {
     if (bit1 == 1 && bit2 == 0 && bit3 == 0) {
         printf("\t\t[Info] ACK is valid: %d%d%d\n", bit1, bit2, bit3);
     } else {
-        printf("\t\t[Warning] ACK is not chill: %d%d%d\n", bit1, bit2, bit3);
+        printf("\t\t[Error] ACK no good: %d%d%d\n", bit1, bit2, bit3);
     }
 }
 
@@ -106,7 +113,25 @@ void swd_init() {
     gpio_disable_pulls(SWCLK_PIN);
 }
 
-void swd_send_wakeup_sequence() {
+void choose_your_core(){
+    swdSetWriteMode();
+    swdWriteBits(0x00,4);
+     
+    // Write into 0xC (TGTSEL)
+    swd_send_request(0b10011001);
+    turnaround();
+    swd_read_ack();
+
+    uint32_t data = 0x01002927;
+    bool parity = parity_bit(data);
+
+    swdSetWriteMode();
+    swdWriteBits(data, 32);
+    swdWriteBit(parity);
+
+}
+
+void arm_wakeup_sequence() {
     swdSetWriteMode();
 
     // Reset to selection alert sequence
@@ -130,26 +155,134 @@ void swd_send_wakeup_sequence() {
     swdWriteBits(0x1A, 8);
 }
 
-void powerDebug(){
-    swdSetWriteMode();
-    swdWriteBits(PWR_DBG, 32);
-    swdWriteBits(0x0, 1);
+void writeTAR(){
+    bool parity = parity_bit(DHCSR);
     swdWriteBits(0x00, 4);
+
+    swd_send_request(0b11010001);
+    turnaround();
+    swd_read_ack();
+
+    swdSetWriteMode();
+    swdWriteBits(DHCSR, 32);
+    swdWriteBit(parity);
 }
 
-void checkClear(){
+void ReadRDBUFF(bool silenced){
+    uint32_t response;
+    if (!silenced){
+        printf("\t[*] Reading RDBUFF\n");
+    }
+    
     swdSetWriteMode();
-    swdWriteBits(0x1e,32);
-    swdWriteBits(0x0,1);
-    swdWriteBits(0x00, 4);
+    swdWriteBits(0x00,4);
+    
+    swd_send_request(0b10111101);
+    turnaround();
+    swd_read_ack();
+
+    response = read_incoming();
+    if (!silenced){
+        printf("\t[*] RDBUFF Response: 0x%08X\n", response);
+    }
+    
 }
 
-void resumeCpu(){
-    /*
-    APSEL
-    */
-    printf("\t[*] Plugging into MEM-AP\n");
-    // 8-3 Handshake [Write APSEL]
+void dehalt(){
+    bool parity = parity_bit(RESUME);
+
+    swdSetWriteMode();
+    printf("\t[RESUME] Writing DHCSR into TAR\n");
+    writeTAR();
+
+    printf("\t[RESUME] Writing 'resume' to DRW\n");
+
+    // 8-3 Handshake to write into DRW
+    swdWriteBits(0x00, 4);
+
+    swd_send_request(0b11011101);
+    turnaround();
+    swd_read_ack();
+
+    printf("\n[!] Resume!!\n\n");
+    swdSetWriteMode();
+    swdWriteBits(RESUME, 32);
+    swdWriteBit(parity);
+}
+
+void shadowStep(){
+    bool parity = parity_bit(STEP);
+
+    swdSetWriteMode();
+   // printf("\t[STEP] Writing DHCSR into TAR\n");
+    writeTAR();
+
+   // printf("\t[STEP] Writing 'step' to DRW\n");
+
+    swdWriteBits(0x00,4);
+    swd_send_request(0b11011101);
+    turnaround();
+    swd_read_ack();
+
+    //printf("\t[STEP] Time to step into the beat o.o\n");
+    swdSetWriteMode();
+
+    swdWriteBits(STEP, 32);
+    swdWriteBit(parity);
+}
+
+void halt(){
+    bool parity = parity_bit(HALT);
+
+    swdSetWriteMode();
+    printf("\t[HALT] Writing DHCSR into TAR\n");
+    writeTAR();
+
+    printf("\t[HALT] Writing 'halt' to DRW\n");
+
+    // 8-3 Handshake to write into DRW
+    swdWriteBits(0x00, 4);
+
+    swd_send_request(0b11011101);
+    turnaround();
+    swd_read_ack();
+
+    printf("\n[!] HALT!!\n\n");
+    swdSetWriteMode();
+    swdWriteBits(HALT, 32);
+    swdWriteBit(parity);
+}
+
+void readHaltRegister(bool silenced){
+    uint32_t response;
+    if (!silenced){
+        printf("\t[+] Writing DHCSR into TAR\n");
+    }
+    
+    writeTAR();
+    if (!silenced){
+        printf("\t[*] Reading DHCSR from DWR\n");
+    }
+
+    swdWriteBits(0x00, 4);
+
+    swd_send_request(0b11111001);
+    turnaround();
+    swd_read_ack();
+
+    response = read_incoming();
+    if (!silenced){
+        printf("\t[*] DWR Response: 0x%08X\n", response);
+    }
+    ReadRDBUFF(silenced);
+}
+
+void cswGo(){
+    
+    uint32_t data = 0xA2000012;
+    bool parity = parity_bit(0x0);
+
+    // 8-3 Handshake to write to weite to APSEL
     swdSetWriteMode();
     swdWriteBits(0x00,4);
 
@@ -157,45 +290,41 @@ void resumeCpu(){
     turnaround();
     swd_read_ack();
 
-    // Suggest to traverse into MEM-AP at AP0 (0x0)
-    swdWriteBits(0x0,32);
-    swdWriteBits(0x0,1);
-    swdWriteBits(0x00, 4);
-
-    /*
-    TAR
-    */
-    printf("\t[*] Writing DHCSR to TAR\n");
-    // 8 -3 Handshake [Write TAR]
     swdSetWriteMode();
-    swdWriteBits(0x00,4);
+    swdWriteBits(0x0, 32);
+    swdWriteBit(parity);
 
-    swd_send_request(0b11010001);
+    // Recalculate parity for new data
+    parity = parity_bit(data);
+
+    printf("\t[*] Writing into CSW AP register\n");
+    // 8-3 Hadnshake to write to CSW AP register
+    swdWriteBits(0x00, 4);
+    swd_send_request(0b11000101);
+
     turnaround();
     swd_read_ack();
 
-    // Whack the address inside TAR
+    // Write into CSW
     swdSetWriteMode();
-    swdWriteBits(DHCSR, 32);
-    swdWriteBits(0x0,1);
-    swdWriteBits(0x00, 4);
+    swdWriteBits(data, 32);
+    swdWriteBit(parity);
+}
 
-    /*
-    DWR
-    */
-    printf("\t[*] Sending resume command to DWR\n");
-    // 8-3 Handshake [Write DWR]
+void powerDebug(){
+    bool parity = parity_bit(PWR_DBG);
     swdSetWriteMode();
-    swdWriteBits(0x00,4);
-    swd_send_request(0b11011101);
-    turnaround();
-    swd_read_ack();
+    swdWriteBits(PWR_DBG, 32);
+    swdWriteBit(parity);
+}
 
-    // Send Resume command
+void checkClear(){
+    uint32_t data = 0x1e;
+    bool parity = parity_bit(data);
+
     swdSetWriteMode();
-    swdWriteBits(0x01040001, 32);
-    swdWriteBits(0x0,1);
-    swdWriteBits(0x00, 4);
+    swdWriteBits(data,32);
+    swdWriteBit(parity);
 }
 
 void initialise_debugger(){
@@ -207,7 +336,7 @@ void initialise_debugger(){
     // Initialize GPIO 
     swd_init();
     
-    swd_send_wakeup_sequence();
+    arm_wakeup_sequence();
 
     swd_line_reset();
     
@@ -216,26 +345,43 @@ void initialise_debugger(){
 
     // Reset
     swd_line_reset();
+
+    /*
+    Choose which core to debug
+    */
+    printf("\t[*] Choosing core 0 to debug rn (ignore the ack)\n");  
+    choose_your_core();
+    
     /*
     Read IDCODE
     */
 
-
+    printf("\t[*] Scanning IDCODE of the target!\n");
     // Send request to read register 0x00 [IDCODE] (8-3 Handshake)
     swd_send_request(0b10100101);
     turnaround();
     swd_read_ack();
 
     // Read the IDCODE register
-    id_code = swd_read_idcode();
+    id_code = read_incoming();
     
     printf("\t[*] IDCODE of the target is: 0x%08X\n", id_code);
 
     /*
-    READ ME: FOR THE SAKE OF WEEK 10 DELIVERABLES JUST COMMENT OUT EVERYTHING BELOW HERE!!!!!
-    READ ME: FOR THE SAKE OF WEEK 10 DELIVERABLES JUST COMMENT OUT EVERYTHING BELOW HERE!!!!!
-    READ ME: FOR THE SAKE OF WEEK 10 DELIVERABLES JUST COMMENT OUT EVERYTHING BELOW HERE!!!!!
+    READ CTRL/STAT (Before Clearing Errors)
     */
+
+    // Send request to READ to register 0x04 [CTRL/STAT] (8-3 Handshake)
+    swdSetWriteMode();
+    swdWriteBits(0x00,4);
+    swd_send_request(0b10110001);
+    turnaround();
+    swd_read_ack();
+
+    // Read CTRL/STAT
+    ctrl_stat_before = read_incoming();
+    printf("\t[*] CTRL/STAT register value before clearing errors: 0x%08X\n", ctrl_stat_before);
+
 
     /*
     Clear Errors
@@ -244,6 +390,7 @@ void initialise_debugger(){
     // Send request to WRITE to register 0x00 [ABORT] (8-3 Handshake)
     swdSetWriteMode();
     swdWriteBits(0x00,4);
+
     swd_send_request(0b10000001);
     turnaround();
     swd_read_ack();
@@ -264,24 +411,23 @@ void initialise_debugger(){
     swd_read_ack();
 
     // Read CTRL/STAT
-    ctrl_stat_before = swd_read_idcode();
+    ctrl_stat_before = read_incoming();
     printf("\t[*] CTRL/STAT register value before power debug: 0x%08X\n", ctrl_stat_before);
+
 
     /*
     Power Debug
     */
-
+    printf("\t[+] Enabling power debug\n");
     // Send request to WRITE to register 0x04 [CTRL/STAT] (8-3 Handshake)
     swdSetWriteMode();
     swdWriteBits(0x00,4);
+
     swd_send_request(0b10010101);
     turnaround();
     swd_read_ack();
 
-    // Send Power Debug command
-    printf("\t[+] Enabling power debug\n");
     powerDebug();
-
 
     /*
     READ CTRL/STAT (After Power Debug)
@@ -290,32 +436,63 @@ void initialise_debugger(){
     // Send request to READ to register 0x04 [CTRL/STAT] (8-3 Handshake)
     swdSetWriteMode();
     swdWriteBits(0x00,4);
+    
     swd_send_request(0b10110001);
     turnaround();
     swd_read_ack();
 
-    ctrl_stat_after = swd_read_idcode();  // Replace with actual read function
-    printf("\t[*] CTRL/STAT register value after power debug: 0x%08X\n", ctrl_stat_after);
+    ctrl_stat_after = read_incoming();  // Replace with actual read function
+    printf("\t[*] CTRL/STAT register value after power debug: 0x%08X\n", ctrl_stat_after);    
 }
+
 
 int main() {
     stdio_init_all();
-    sleep_ms(6500); // Gotta chill lmao i ain't the flash
-    printf("[*] Debugger pre-alpha v.1\n");
+    sleep_ms(3000); // Gotta chill lmao i ain't the flash
+    printf("\n[*] Debugger alpha v.3\n");
 
-    // Initialize the debugger
     sleep_ms(800);  // Sleep for dramatic effect
     printf("\n[*] Initializing debugger right now bro\n");
 
+    // Start the debugger
     initialise_debugger();
 
-    // At this stage the CPU should be auto-halted
-    printf("\n[*] Debugger is ready! (i think)\n");
+    printf("\n[*] Debugger is ready (i think)\n");
 
-    sleep_ms(2000); //Simulate the fact that someone is sending the command
+    // Plug inside MEM-AP
+    printf("\t[+] Plugging into MEM-AP\n");
+    sleep_ms(400);  // Sleep for dramatic effect
+    cswGo();
+    
+    // Read the halt register
+    sleep_ms(400);  // Sleep for dramatic effect
+    readHaltRegister(false);    
 
-    // Command 1: Resume
-    resumeCpu();
+    // Command 1: HALT
+    sleep_ms(100); // Sleep for dramatic effect
+    halt();
+    readHaltRegister(false);
+
+    // Command 2: Step
+    printf("\t[INFO] Stepping CPU\n");
+    sleep_ms(100);
+    for (int i = 0; i < 35; i++){
+        printf("\t\t[Step] Step %d\n", i);
+        sleep_ms(60); // Sleep for dramatic effect
+        shadowStep();
+        readHaltRegister(true);
+    }
+
+
+    // Command 3: Resume
+    for (int i = 0; i < 5; i++) {
+        sleep_ms(950); // Sleep for dramatic effect
+        printf("[INFO] Resuming in %d\n", 5 - i);
+    }
+
+    printf("\n\t[+] Resuming CPU\n");
+    dehalt();
+    readHaltRegister(false); 
 
     return 0;
 }
