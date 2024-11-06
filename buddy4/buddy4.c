@@ -10,7 +10,6 @@
 #define RESUME 0xA05F0001
 #define STEP 0xA05F0005
 
-
 bool parity_bit(uint32_t data) {
     bool parity = 0;
     while (data) {
