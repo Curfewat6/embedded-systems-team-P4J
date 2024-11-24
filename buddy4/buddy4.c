@@ -130,7 +130,6 @@ void choose_your_core(){
     swdSetWriteMode();
     swdWriteBits(data, 32);
     swdWriteBit(parity);
-
 }
 
 void arm_wakeup_sequence() {
@@ -224,7 +223,6 @@ void shadowStep(){
     turnaround();
     swd_read_ack();
 
-   
     swdSetWriteMode();
 
     swdWriteBits(STEP, 32);
@@ -314,7 +312,6 @@ void reset_and_halt(){
 }
 
 void cswGo(){
-    
     uint32_t data = 0xA2000012;
     bool parity = parity_bit(0x0);
 
@@ -417,7 +414,6 @@ void initialise_debugger(){
     // Read CTRL/STAT
     ctrl_stat_before = read_incoming();
     printf("\t[*] CTRL/STAT register value before clearing errors: 0x%08X\n", ctrl_stat_before);
-
 
     /*
     Clear Errors
