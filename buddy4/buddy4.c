@@ -2,13 +2,16 @@
 #include "hardware/gpio.h"
 #include <stdio.h>
 
-#define SWCLK_PIN 2  // GPIO pin for SWCLK
-#define SWDIO_PIN 3  // GPIO pin for SWDIO
+#define SWCLK_PIN 2         // GPIO pin for SWCLK
+#define SWDIO_PIN 3         // GPIO pin for SWDIO
 #define PWR_DBG 0x50000000  // Command to enable debug power
-#define DHCSR 0xE000EDF0  // DHCSR address
-#define HALT 0xA05F0003
-#define RESUME 0xA05F0001
-#define STEP 0xA05F0005
+#define AIRCR 0xE000ED0C    // AIRCR address
+#define DHCSR 0xE000EDF0    // DHCSR address
+#define DEMCR 0xE000EDFC    // DEMCR address
+#define HALT 0xA05F0003     // Halt Command
+#define RESUME 0xA05F0001   // Resume Command
+#define STEP 0xA05F0005     // Step Command
+#define RESET 0x05FA0004    // Reset Command
 
 bool parity_bit(uint32_t data) {
     bool parity = 0;
@@ -154,17 +157,19 @@ void arm_wakeup_sequence() {
     swdWriteBits(0x1A, 8);
 }
 
-void writeTAR(){
-    bool parity = parity_bit(DHCSR);
+void writeTAR(uint32_t address){
+    bool parity = parity_bit(address);
     swdWriteBits(0x00, 4);
 
     swd_send_request(0b11010001);
     turnaround();
     swd_read_ack();
 
+
     swdSetWriteMode();
-    swdWriteBits(DHCSR, 32);
+    swdWriteBits(address, 32);
     swdWriteBit(parity);
+
 }
 
 void ReadRDBUFF(bool silenced){
@@ -184,7 +189,6 @@ void ReadRDBUFF(bool silenced){
     if (!silenced){
         printf("\t[*] RDBUFF Response: 0x%08X\n", response);
     }
-    
 }
 
 void dehalt(){
@@ -192,7 +196,7 @@ void dehalt(){
 
     swdSetWriteMode();
     printf("\t[RESUME] Writing DHCSR into TAR\n");
-    writeTAR();
+    writeTAR(DHCSR);
 
     printf("\t[RESUME] Writing 'resume' to DRW\n");
 
@@ -213,17 +217,14 @@ void shadowStep(){
     bool parity = parity_bit(STEP);
 
     swdSetWriteMode();
-   // printf("\t[STEP] Writing DHCSR into TAR\n");
-    writeTAR();
-
-   // printf("\t[STEP] Writing 'step' to DRW\n");
+    writeTAR(DHCSR);
 
     swdWriteBits(0x00,4);
     swd_send_request(0b11011101);
     turnaround();
     swd_read_ack();
 
-    //printf("\t[STEP] Time to step into the beat o.o\n");
+   
     swdSetWriteMode();
 
     swdWriteBits(STEP, 32);
@@ -235,7 +236,7 @@ void halt(){
 
     swdSetWriteMode();
     printf("\t[HALT] Writing DHCSR into TAR\n");
-    writeTAR();
+    writeTAR(DHCSR);
 
     printf("\t[HALT] Writing 'halt' to DRW\n");
 
@@ -258,7 +259,7 @@ void readHaltRegister(bool silenced){
         printf("\t[+] Writing DHCSR into TAR\n");
     }
     
-    writeTAR();
+    writeTAR(DHCSR);
     if (!silenced){
         printf("\t[*] Reading DHCSR from DWR\n");
     }
@@ -274,6 +275,42 @@ void readHaltRegister(bool silenced){
         printf("\t[*] DWR Response: 0x%08X\n", response);
     }
     ReadRDBUFF(silenced);
+}
+
+void reset_and_halt(){
+    bool parity = parity_bit(0x00000001);
+    swdSetWriteMode();
+    printf("\t[RESET] Writing DEMCR into TAR\n");
+    writeTAR(DEMCR);
+    printf("\t[RESET] Enabling Halt on reset\n");
+
+    swdWriteBits(0x00, 4);
+
+    swd_send_request(0b11011101);
+    turnaround();
+    swd_read_ack();
+
+    printf("[RESET] Sending 0x00000001 to DEMCR\n");
+
+    swdSetWriteMode();
+    swdWriteBits(0x00000001, 32);
+    swdWriteBit(parity);
+
+    readHaltRegister(false);
+
+    printf("\t[RESET] Writing AIRCR into TAR\n");
+    writeTAR(AIRCR);
+    printf("\t[RESET] Sending RESET command\n");
+    parity = parity_bit(RESET);
+
+    swdWriteBits(0x00, 4);
+    swd_send_request(0b11011101);
+    turnaround();
+    swd_read_ack();
+
+    swdSetWriteMode();
+    swdWriteBits(RESET, 32);
+    swdWriteBit(parity);
 }
 
 void cswGo(){
@@ -444,11 +481,10 @@ void initialise_debugger(){
     printf("\t[*] CTRL/STAT register value after power debug: 0x%08X\n", ctrl_stat_after);    
 }
 
-
 int main() {
     stdio_init_all();
     sleep_ms(3000); // Gotta chill lmao i ain't the flash
-    printf("\n[*] Debugger alpha v.3\n");
+    printf("\n[*] Debugger beta v.1\n");
 
     sleep_ms(800);  // Sleep for dramatic effect
     printf("\n[*] Initializing debugger right now bro\n");
@@ -472,7 +508,7 @@ int main() {
     halt();
     readHaltRegister(false);
 
-    // Command 2: Step
+    // Command 2: Step (step 35 times)
     printf("\t[INFO] Stepping CPU\n");
     sleep_ms(100);
     for (int i = 0; i < 35; i++){
@@ -482,8 +518,26 @@ int main() {
         readHaltRegister(true);
     }
 
-
     // Command 3: Resume
+    for (int i = 0; i < 5; i++) {
+        sleep_ms(950); // Sleep for dramatic effect
+        printf("[INFO] Resuming in %d\n", 5 - i);
+    }
+
+    printf("\n\t[+] Resuming CPU\n");
+    dehalt();
+    readHaltRegister(false); 
+
+    // Command 4: RESET
+    for (int i = 0; i < 5; i++) {
+        sleep_ms(950); // Sleep for dramatic effect
+        printf("[INFO] Reset in %d\n", 5 - i);
+    }
+    printf("\n\t[-] Attempting to RESET");
+    reset_and_halt();
+    readHaltRegister(false);
+
+    // Command 3: Resume again
     for (int i = 0; i < 5; i++) {
         sleep_ms(950); // Sleep for dramatic effect
         printf("[INFO] Resuming in %d\n", 5 - i);
