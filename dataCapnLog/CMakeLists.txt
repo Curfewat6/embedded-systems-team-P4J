@@ -29,7 +29,17 @@ add_executable(dataCapnLogINF2004
     hw_config.c
     # capturenlog.c
     # capturenlog2.c
-    capturenlog3.c
+    # capturenlog3.c
+    # capturenlog4.c
+    # capturenlog5.c
+    # capturenlog6.c
+    
+    # capturenlog7.c#(working version)
+    # capturenlog8.c#(testing final version)
+    # capturenlog9.c
+    # testkane.c
+    # capturenlog10.c
+    capturenlog11.c #(testing final final version)
 )
 
 # Add the standard library and FatFS/SPI to the build
@@ -39,6 +49,7 @@ target_link_libraries(dataCapnLogINF2004
     # ntp_client
     hardware_pwm
     hardware_spi    # Add this for SPI functionality
+    hardware_adc
     # hardware_rtc
     # added this for ntp
     # pico_cyw43_arch_lwip_threadsafe_background
