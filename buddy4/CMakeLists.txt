@@ -1,7 +1,7 @@
 add_executable(buddy4 buddy4.c)
 
 # pull in common dependencies
-target_link_libraries(buddy4 pico_stdlib hardware_adc)
+target_link_libraries(buddy4 pico_stdlib pico_time)
 
 # enable usb output, enable uart output
 pico_enable_stdio_usb(buddy4 1)
