@@ -1,36 +1,9 @@
-#include <stdio.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <math.h>
-#include <string.h>
-
-#include "pico/stdlib.h"
-#include "hardware/pwm.h"
-#include "hardware/adc.h"
-#include "hardware/gpio.h"
-#include "hardware/timer.h"
-
 #include "b2_functions.h"
-
-typedef struct
-{
-    float total_pulse_width;
-    float pulse_width_high_time;
-    float pulse_width_low_time;
-} pulse_t;
 
 volatile pulse_t pulses[PULSE_NUM + 1];
 volatile uint32_t pulse_index = 0;
 volatile uint32_t last_pulse_time = 0;
 volatile uint32_t pulse_last_edge_time = 0;
-
-typedef struct
-{
-    float adc_frequency;
-    float adc_rms_value;
-    float adc_peak_to_peak_value;
-    float adc_snr_value;
-} adc_t;
 
 volatile bool adc_timer = false;
 volatile adc_t adc_results[SAMPLE_SIZE];
@@ -288,22 +261,24 @@ float calculate_duty_cycle()
 // End PWM section =========================================
 
 // Start MISC section =========================================
-// bool get_all_values(struct repeating_timer *t)
-// {
-//     printf("\nGetting all values...\n");
-//     printf("Printing stored pulses (%i):\n", pulse_index - 1);
-//     for (int i = 1; i < pulse_index; i++)
-//     {
-//         printf("Pulse %d - High Duration: %.2f us, Low Duration: %.2f us, Total Duration: %.2f\n",
-//                i + 1,
-//                pulses[i].pulse_width_high_time,
-//                pulses[i].pulse_width_low_time,
-//                pulses[i].total_pulse_width);
-//     }
-//     printf("ADC: Average Frequency: %.2f Hz\n", adc_results[adc_index].adc_frequency);
-//     printf("PWM: Frequency: %.2f Hz\tDuty Cycle: %.2f\n", pwm_frequency, pwm_duty_cycle);
-//     return true;
-// }
+bool get_all_values(struct repeating_timer *t)
+{
+    printf("\nGetting all values...\n");
+    printf("Printing stored pulses (%i):\n", pulse_index - 1);
+    for (int i = 1; i < pulse_index; i++)
+    {
+        printf("Pulse %d - High Duration: %.2f us, Low Duration: %.2f us, Total Duration: %.2f\n",
+               i + 1,
+               pulses[i].pulse_width_high_time,
+               pulses[i].pulse_width_low_time,
+               pulses[i].total_pulse_width);
+    }
+    printf("ADC: Average Frequency: %.2f Hz\n",
+           adc_results[adc_index - 1].adc_frequency);
+    printf("PWM: Frequency: %.2f Hz\tDuty Cycle: %.2f\n",
+           pwm_frequency, pwm_duty_cycle);
+    return true;
+}
 
 void gpio_callback(uint gpio, uint32_t events)
 {

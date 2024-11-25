@@ -1,8 +1,7 @@
-add_subdirectory(draft)
-
 if (TARGET tinyusb_device)
     add_executable(project_buddy2
             project_buddy2.c
+            b2_functions.c
             )
 
     # pull in common dependencies

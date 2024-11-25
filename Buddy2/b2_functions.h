@@ -22,6 +22,21 @@
 #define SAMPLE_THRESHOLD 1000
 #define DEBOUNCE_DELAY 300
 
+typedef struct
+{
+    float total_pulse_width;
+    float pulse_width_high_time;
+    float pulse_width_low_time;
+} pulse_t;
+
+typedef struct
+{
+    float adc_frequency;
+    float adc_rms_value;
+    float adc_peak_to_peak_value;
+    float adc_snr_value;
+} adc_t;
+
 void read_pulse(uint gpio, uint32_t events);
 void print_pulses();
 

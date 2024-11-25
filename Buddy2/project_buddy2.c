@@ -32,11 +32,11 @@ int main()
     setup_pins();
     setup_adc();
 
-    setup_pwm(0, 900.0f, 0.7f);
+    setup_pwm(0, 600.0f, 0.5f);
 
     struct repeating_timer timer1, timer2;
     add_repeating_timer_ms(1000, measure_digi, NULL, &timer1);
-    // add_repeating_timer_ms(4000, get_all_values, NULL, &timer2);
+    add_repeating_timer_ms(4000, get_all_values, NULL, &timer2);
 
     bool signal_above_threshold = false;
 
