@@ -1,5 +1,6 @@
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
+#include "pico/time.h"
 #include <stdio.h>
 
 #define SWCLK_PIN 2         // GPIO pin for SWCLK
@@ -26,8 +27,10 @@ void pulse_swclk(int cycles) {
     for (int i = 0; i < cycles; i++) {
         gpio_put(SWCLK_PIN, 0);
         sleep_ms(1);
+        // busy_wait_ms(1);
         gpio_put(SWCLK_PIN, 1);
         sleep_ms(1);
+        // busy_wait_ms(1);
     }
 }
 
@@ -125,6 +128,7 @@ void choose_your_core(){
     swd_read_ack();
 
     uint32_t data = 0x01002927;
+    // uint32_t data = 0x11002927;
     bool parity = parity_bit(data);
 
     swdSetWriteMode();
