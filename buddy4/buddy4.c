@@ -6,13 +6,17 @@
 #define SWCLK_PIN 2         // GPIO pin for SWCLK
 #define SWDIO_PIN 3         // GPIO pin for SWDIO
 #define PWR_DBG 0x50000000  // Command to enable debug power
+#define SAMPLE_DATA 0x0000000F // Sample data to write
+#define SAMPLE_ADDRESS 0x50000000  // Testing address to write
 #define AIRCR 0xE000ED0C    // AIRCR address
 #define DHCSR 0xE000EDF0    // DHCSR address
+#define DCRSR 0xE000EDF4    // DCRSR address
 #define DEMCR 0xE000EDFC    // DEMCR address
 #define HALT 0xA05F0003     // Halt Command
 #define RESUME 0xA05F0001   // Resume Command
 #define STEP 0xA05F0005     // Step Command
 #define RESET 0x05FA0004    // Reset Command
+
 
 bool parity_bit(uint32_t data) {
     bool parity = 0;
@@ -172,7 +176,6 @@ void writeTAR(uint32_t address){
     swdSetWriteMode();
     swdWriteBits(address, 32);
     swdWriteBit(parity);
-
 }
 
 void ReadRDBUFF(bool silenced){
@@ -192,6 +195,40 @@ void ReadRDBUFF(bool silenced){
     if (!silenced){
         printf("\t[*] RDBUFF Response: 0x%08X\n", response);
     }
+}
+
+void writeMemory(uint32_t address){
+    bool parity = parity_bit(SAMPLE_DATA);
+    swdSetWriteMode();
+    writeTAR(address);
+    printf("\t[WRITE MEMORY] Writing to 0x%08X\n", address);
+
+    // 8-3 Handshake to write DRW
+    swdWriteBits(0x00, 4);
+    swd_send_request(0b11011101);
+    turnaround();
+    swd_read_ack();
+
+    printf("\t[WRITE MEMORY] Writing...\n");
+    swdSetWriteMode();
+    swdWriteBits(SAMPLE_DATA, 32);
+    swdWriteBit(parity);
+}
+
+void readMemory(uint32_t address){
+    swdSetWriteMode();
+    writeTAR(address);
+    printf("\t[READ MEMORY] Reading from 0x%08X\n", address);
+    
+    // 8-3 Handshake to read DRW
+    swdWriteBits(0x00, 4);
+    swd_send_request(0b11111001);
+    turnaround();
+    swd_read_ack();
+
+    // Read incoming 32 bits from DRW
+    uint32_t response = read_incoming();
+    ReadRDBUFF(false);
 }
 
 void dehalt(){
@@ -547,5 +584,8 @@ int main() {
     dehalt();
     readHaltRegister(false); 
 
+    readMemory(SAMPLE_ADDRESS);
+    writeMemory(SAMPLE_ADDRESS);
+    readMemory(SAMPLE_ADDRESS);
     return 0;
 }
